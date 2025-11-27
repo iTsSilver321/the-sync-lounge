@@ -5,7 +5,9 @@ const http = require('http');
 const { Server } = require("socket.io");
 const cors = require('cors');
 
+// --- SETUP ---
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Use 2.5-flash for speed. If you have access, you can use "gemini-3.0-pro"
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 const app = express();
@@ -20,9 +22,11 @@ const io = new Server(server, {
   }
 });
 
+// --- GLOBAL MEMORY ---
 const roomLikes = {}; 
 const mindMeldAnswers = {}; 
 const roomDrawings = {}; 
+const roomMovieStartPage = {}; 
 
 io.on('connection', (socket) => {
   console.log(`⚡: User connected ${socket.id}`);
@@ -42,6 +46,17 @@ io.on('connection', (socket) => {
     // Send Canvas History
     if (roomDrawings[roomId]) {
       socket.emit('canvas:history', roomDrawings[roomId]);
+    }
+  });
+
+  // 2. MOVIE PAGE SYNC
+  socket.on('movie:get_page', () => {
+    const roomId = socket.data.roomId;
+    if (roomId) {
+        if (!roomMovieStartPage[roomId]) {
+             roomMovieStartPage[roomId] = Math.floor(Math.random() * 20) + 1;
+        }
+        socket.emit('movie:sync_page', { page: roomMovieStartPage[roomId] });
     }
   });
 
@@ -78,6 +93,7 @@ io.on('connection', (socket) => {
       const question = result.response.text().trim();
       io.to(roomId).emit('mind:new_question', question);
     } catch (error) {
+      console.error("AI Error:", error);
       io.to(roomId).emit('mind:new_question', "What is your favorite memory of us?");
     }
   });
@@ -117,6 +133,37 @@ io.on('connection', (socket) => {
     }
   });
 
+  // --- MODULE D: TRUTH OR DARE (THIS WAS MISSING!) ---
+  socket.on('truth:generate', async ({ type, intensity }) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+
+    console.log(`[AI] Generating ${intensity} ${type} for Room ${roomId}...`);
+
+    try {
+      const prompt = `Generate a single, fun, and specific ${type} challenge for a couple. 
+      The intensity level is: ${intensity}. 
+      Examples for Chill Truth: "What is your favorite movie?"
+      Examples for Wild Dare: "Let your partner style your hair."
+      Output ONLY the challenge text. No "Here is a dare:" prefix. Keep it short.`;
+
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const challenge = response.text().trim();
+
+      // Send to everyone in room
+      io.to(roomId).emit('truth:new_challenge', { text: challenge, type });
+
+    } catch (error) {
+      console.error("AI Error:", error);
+      io.to(roomId).emit('truth:new_challenge', { 
+        text: "Tell your partner something you love about them.", 
+        type: "truth" 
+      });
+    }
+  });
+
+  // DISCONNECT
   socket.on('disconnect', () => {
     delete mindMeldAnswers[socket.id];
     const roomId = socket.data.roomId;

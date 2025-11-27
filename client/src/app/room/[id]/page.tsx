@@ -5,9 +5,9 @@ import { useParams } from "next/navigation";
 import SwipeGame from "@/components/SwipeGame";
 import MindMeld from "@/components/MindMeld";
 import SharedCanvas from "@/components/SharedCanvas";
-import { Film, Brain, Palette } from "lucide-react";
+import { Film, Brain, Palette, BookHeart, Zap } from "lucide-react";
 import Memories from "@/components/Memories";
-import { BookHeart } from "lucide-react";
+import TruthDare from "@/components/TruthDare";
 
 export default function GameRoom() {
   // 1. Get the Room ID from the URL
@@ -15,7 +15,7 @@ export default function GameRoom() {
   const roomId = params.id as string;
 
   // 2. State for the navigation tabs
-  const [activeTab, setActiveTab] = useState<"movies" | "mind" | "canvas" | "memories">("movies");
+  const [activeTab, setActiveTab] = useState<"movies" | "mind" | "canvas" | "memories" | "truth">("movies");
 
   return (
     <main className="flex min-h-screen flex-col bg-zinc-950 text-white">
@@ -47,6 +47,10 @@ export default function GameRoom() {
         {/* Canvas Tab */}
         <div className={`w-full h-full ${activeTab === "canvas" ? "flex" : "hidden"}`}>
           <SharedCanvas />
+        </div>
+
+        <div className={`w-full h-full ${activeTab === "truth" ? "flex" : "hidden"}`}>
+          <TruthDare />
         </div>
 
         {/* Memories Tab */}
@@ -81,6 +85,14 @@ export default function GameRoom() {
         >
           <Palette size={24} />
           <span className="text-[10px] font-medium uppercase tracking-wider">Canvas</span>
+        </button>
+
+        <button  
+            onClick={() => setActiveTab("truth")}
+            className={`flex flex-col items-center gap-1 transition-colors ${activeTab === "truth" ? "text-purple-400" : "text-zinc-600 hover:text-zinc-400"}`}
+        >
+            <Zap size={24} />
+            <span className="text-[10px] font-medium uppercase tracking-wider">Play</span>
         </button>
 
         <button 
