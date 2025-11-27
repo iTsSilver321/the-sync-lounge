@@ -5,12 +5,7 @@ const http = require('http');
 const { Server } = require("socket.io");
 const cors = require('cors');
 
-// --- SETUP ---
-// UPDATED: Using the latest Gemini 3.0 Pro model
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-// Use 'gemini-3-pro-preview' for the best reasoning
-// OR use 'gemini-2.5-flash' if you want it to be faster/cheaper
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 const app = express();
@@ -20,12 +15,11 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: "*", 
     methods: ["GET", "POST"]
   }
 });
 
-// --- GLOBAL MEMORY ---
 const roomLikes = {}; 
 const mindMeldAnswers = {}; 
 const roomDrawings = {}; 
@@ -45,12 +39,13 @@ io.on('connection', (socket) => {
     socket.data.roomId = roomId;
     console.log(`User ${socket.id} joined room: ${roomId}`);
 
+    // Send Canvas History
     if (roomDrawings[roomId]) {
       socket.emit('canvas:history', roomDrawings[roomId]);
     }
   });
 
-  // --- MODULE A: MOVIES ---
+  // MODULE A: MOVIES
   socket.on('movie:swipe', ({ movieId, direction }) => {
     const roomId = socket.data.roomId; 
     if (!roomId) return;
@@ -68,63 +63,44 @@ io.on('connection', (socket) => {
     }
   });
 
-  // --- MODULE B: MIND MELD ---
-  
-  // Event 1: Typing
+  // MODULE B: MIND MELD
   socket.on('mind:typing', (isTyping) => {
     const roomId = socket.data.roomId;
     if (roomId) socket.broadcast.to(roomId).emit('mind:partner_typing', isTyping);
   });
 
-  // Event 2: Generate Question (Using Gemini 3.0 Pro)
   socket.on('mind:generate_question', async (vibe) => {
     const roomId = socket.data.roomId;
-    
-    console.log(`[DEBUG] Generating ${vibe} question with Gemini 3.0...`);
-
     if (!roomId) return;
-
     try {
-      const prompt = `Generate a single, short, engaging question for a couple to answer simultaneously. The vibe is: ${vibe}. Do not include "Question:" label. Just the text.`;
-
+      const prompt = `Generate a single, short, engaging question for a couple. Vibe: ${vibe}. Just text.`;
       const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const question = response.text().trim();
-
-      console.log(`[AI SUCCESS] ${question}`);
+      const question = result.response.text().trim();
       io.to(roomId).emit('mind:new_question', question);
-
     } catch (error) {
-      console.error("AI Error:", error);
-      // Fallback if AI fails (e.g. quota limit)
-      io.to(roomId).emit('mind:new_question', "What is the most adventurous thing we should do this year?");
+      io.to(roomId).emit('mind:new_question', "What is your favorite memory of us?");
     }
   });
 
-  // Event 3: Submit Answer
   socket.on('mind:submit', ({ answer }) => {
     const roomId = socket.data.roomId;
     if (!roomId) return;
-
     mindMeldAnswers[socket.id] = answer;
     socket.broadcast.to(roomId).emit('mind:partner_submitted');
-
     const room = io.sockets.adapter.rooms.get(roomId);
     if (room && room.size === 2) {
       const ids = Array.from(room);
       const answerA = mindMeldAnswers[ids[0]];
       const answerB = mindMeldAnswers[ids[1]];
-
       if (answerA && answerB) {
         io.to(ids[0]).emit('mind:reveal', { answer: answerB });
         io.to(ids[1]).emit('mind:reveal', { answer: answerA });
-        delete mindMeldAnswers[ids[0]];
-        delete mindMeldAnswers[ids[1]];
+        delete mindMeldAnswers[ids[0]]; delete mindMeldAnswers[ids[1]];
       }
     }
   });
 
-  // --- MODULE C: CANVAS ---
+  // MODULE C: CANVAS
   socket.on('canvas:draw', (data) => {
     const roomId = socket.data.roomId;
     if (roomId) {
@@ -133,7 +109,6 @@ io.on('connection', (socket) => {
       socket.broadcast.to(roomId).emit('canvas:draw', data);
     }
   });
-
   socket.on('canvas:clear', () => {
     const roomId = socket.data.roomId;
     if (roomId) {
@@ -143,21 +118,17 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log(`🔥: User disconnected ${socket.id}`);
     delete mindMeldAnswers[socket.id];
-
-    // FIX: Remove this user's likes from the movie memory
-    // This prevents matching with your own "ghost" after a refresh
     const roomId = socket.data.roomId;
     if (roomId && roomLikes[roomId]) {
        Object.keys(roomLikes[roomId]).forEach(movieId => {
-         // Filter out the disconnected user ID
          roomLikes[roomId][movieId] = roomLikes[roomId][movieId].filter(id => id !== socket.id);
        });
     }
   });
 });
 
-server.listen(3001, () => {
-  console.log('SERVER RUNNING ON 3001');
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => {
+  console.log(`SERVER RUNNING ON PORT ${PORT}`);
 });

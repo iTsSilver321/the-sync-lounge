@@ -5,6 +5,7 @@ import { Send, Sparkles, RefreshCw } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useGameSounds } from "@/hooks/useGameSounds";
 import { socket } from "@/lib/socket";
+import { supabase } from "@/lib/supabase";
 
 
 export default function MindMeld() {
@@ -47,10 +48,21 @@ export default function MindMeld() {
       setPartnerStatus("Partner has answered! ✅");
     });
 
-    socket.on("mind:reveal", (data) => {
+    socket.on("mind:reveal", async (data) => {
       playMatch();
       setIsRevealed(true);
       setPartnerAnswer(data.answer);
+      if (myAnswer && data.answer && question) {
+           await supabase.from('history').insert({
+            room_id: roomId,
+            category: 'mind',
+            content: { 
+              question: question,
+              answerA: myAnswer, // Note: This saves "My" answer and "Partner" answer
+              answerB: data.answer // You might want to label them by User Name later
+            }
+          });
+      }
     });
 
     return () => {

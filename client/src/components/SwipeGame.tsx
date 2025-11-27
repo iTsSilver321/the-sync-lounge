@@ -8,7 +8,8 @@ import { useParams } from "next/navigation";
 import { fetchMovies } from "@/app/actions"; 
 import { Loader2 } from "lucide-react"; 
 import { useGameSounds } from "@/hooks/useGameSounds";
-import { socket } from "@/lib/socket";
+import { socket } from "@/lib/socket"; 
+import { supabase } from "@/lib/supabase";
 
 interface Movie {
   id: number;
@@ -18,7 +19,6 @@ interface Movie {
   overview: string;
 }
 
-
 export default function SwipeGame() {
   const { playSwipe, playMatch } = useGameSounds();
   const params = useParams();
@@ -27,100 +27,108 @@ export default function SwipeGame() {
   const [cards, setCards] = useState<Movie[]>([]);
   const [match, setMatch] = useState<{ title: string; poster: string } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
+  
+  // Start as NULL
+  const [page, setPage] = useState<number | null>(null);
   
   const isFetching = useRef(false);
-  
-  // Cache to store movie details for the match screen
   const movieCache = useRef<Map<number, Movie>>(new Map());
 
-  // Initial Data Fetch
+  // 1. CALCULATE PAGE & SETUP SOCKET
   useEffect(() => {
-    loadNewMovies();
-  }, []);
+    // --- THE MATH TRICK ---
+    // Turn the Room ID (e.g. "A7X2") into a number (e.g. 14)
+    // This ensures both users get the same "random" page instantly.
+    const seed = roomId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const calculatedPage = (seed % 20) + 1; // Result is always 1-20
+    
+    console.log(`Room ${roomId} maps to Page ${calculatedPage}`);
+    setPage(calculatedPage);
 
-  const loadNewMovies = async () => {
+    // Socket Connection
+    if (!socket.connected) socket.connect();
+    socket.emit("join_room", roomId);
+
+    const handleMatch = async (data: any) => {
+      playMatch();
+      const matchedMovie = movieCache.current.get(data.movieId);
+      
+      if (matchedMovie) {
+        setMatch({ title: matchedMovie.title, poster: matchedMovie.poster });
+        
+        // Save to DB
+        try {
+            await supabase.from('history').insert({
+                room_id: roomId,
+                category: 'movie',
+                content: { title: matchedMovie.title, poster: matchedMovie.poster }
+            });
+        } catch (err) {}
+      } else {
+        setMatch({ title: "It's a Match!", poster: "https://placehold.co/600x400?text=Match+Found!" });
+      }
+    };
+
+    socket.on("movie:match_found", handleMatch);
+
+    return () => {
+      socket.off("movie:match_found", handleMatch);
+    };
+  }, []); // Run ONCE
+
+  // 2. FETCH MOVIES
+  useEffect(() => {
+    // Only fetch if we have a page number
+    if (page !== null) {
+      loadNewMovies(page);
+    }
+  }, [page]); 
+
+  const loadNewMovies = async (pageToFetch: number) => {
     if (isFetching.current) return;
     isFetching.current = true;
     setLoading(true);
 
     try {
-      const newMovies = await fetchMovies(page);
+      console.log("Fetching TMDB Page:", pageToFetch);
+      const newMovies = await fetchMovies(pageToFetch);
       
       setCards((prev) => {
         const existingIds = new Set(prev.map((card) => card.id));
-        
-        // Explicitly type 'movie' here
         const uniqueNewMovies = newMovies.filter((movie: Movie) => !existingIds.has(movie.id));
-        
-        // FIX: Explicitly type 'm' here to solve your error
         uniqueNewMovies.forEach((m: Movie) => movieCache.current.set(m.id, m));
-
         return [...prev, ...uniqueNewMovies];
       });
-
-      setPage((prev) => prev + 1);
     } catch (error) {
-      console.error("Failed to load movies:", error);
+      console.error("Fetch Error:", error);
     } finally {
       setLoading(false);
       isFetching.current = false;
     }
   };
 
-  // Socket Connection
-  useEffect(() => {
-    if (!socket.connected) {
-      socket.connect();
-    }
-    socket.emit("join_room", roomId);
-
-    socket.on("movie:match_found", (data) => {
-      playMatch();
-      const matchedMovie = movieCache.current.get(data.movieId);
-      
-      if (matchedMovie) {
-        setMatch({ 
-          title: matchedMovie.title, 
-          poster: matchedMovie.poster 
-        });
-      } else {
-        setMatch({ 
-          title: "It's a Match!", 
-          poster: "https://placehold.co/600x400?text=Match+Found!" 
-        });
-      }
-    });
-
-    return () => {
-      socket.off("movie:match_found");
-    };
-  }, []);
-
   const handleSwipe = (id: number, direction: "left" | "right") => {
     setCards((prev) => prev.filter((card) => card.id !== id));
-    
-    if (socket) {
-      socket.emit("movie:swipe", { movieId: id, direction });
-    }
+    if (socket) socket.emit("movie:swipe", { movieId: id, direction });
 
-    if (cards.length < 3 && !isFetching.current) {
-      loadNewMovies();
+    // Infinite Scroll
+    if (cards.length < 3 && !isFetching.current && page !== null) {
+      setPage(prev => (prev ? prev + 1 : prev));
     }
   };
 
-  if (loading && cards.length === 0) {
+  // LOADING STATE
+  if ((loading && cards.length === 0) || page === null) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-purple-400">
         <Loader2 className="w-10 h-10 animate-spin mb-4" />
-        <p className="text-zinc-400 animate-pulse">Loading Cinema...</p>
+        <p className="text-zinc-400 animate-pulse">Syncing Cinema...</p>
       </div>
     );
   }
 
   return (
     <div className="relative flex h-full w-full flex-col items-center justify-center">
-      
       <AnimatePresence>
         {match && (
           <MatchModal 
@@ -145,9 +153,7 @@ export default function SwipeGame() {
       {cards.length === 0 && !loading && (
         <div className="text-center p-8 glass-panel rounded-3xl animate-in fade-in">
              <h3 className="text-2xl font-bold mb-2">That's a Wrap! 🎬</h3>
-             <button onClick={() => window.location.reload()} className="px-6 py-3 bg-white/10 hover:bg-white/20 rounded-full font-medium">
-                Refresh
-             </button>
+             <button onClick={() => window.location.reload()} className="px-6 py-3 bg-white/10 hover:bg-white/20 rounded-full font-medium">Refresh</button>
         </div>
       )}
     </div>
