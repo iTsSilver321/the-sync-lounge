@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { socket } from "@/lib/socket"; // <--- CRITICAL FIX
+import { socket } from "@/lib/socket";
 import { Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useGameSounds } from "@/hooks/useGameSounds";
@@ -11,37 +11,33 @@ export default function SharedCanvas() {
   const params = useParams();
   const roomId = params.id as string;
 
+  const containerRef = useRef<HTMLDivElement>(null); // Ref for the container
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [color, setColor] = useState("#A855F7");
   const prevPoint = useRef<{ x: number; y: number } | null>(null);
 
+  // 1. SOCKET & DRAWING LOGIC
   useEffect(() => {
-    // 1. CONNECT & JOIN
     if (!socket.connected) socket.connect();
+    
+    // Re-join room on connect (fixes refresh/sleep issues)
+    const handleConnect = () => socket.emit("join_room", roomId);
+    socket.on("connect", handleConnect);
+    
+    // Initial join
     socket.emit("join_room", roomId);
 
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const ctx = canvas?.getContext("2d");
 
-    // Responsive Canvas Size
-    const setSize = () => {
-        if (canvas.parentElement) {
-            canvas.width = canvas.parentElement.offsetWidth;
-            canvas.height = window.innerHeight * 0.6;
-            ctx.lineWidth = 4;
-            ctx.lineCap = "round";
-            ctx.lineJoin = "round";
-        }
-    };
-    setSize();
-    window.addEventListener("resize", setSize);
-
-    // 2. LISTENERS
+    // Socket Listeners
     const handleDraw = ({ x, y, prevX, prevY, color }: any) => {
+      if (!ctx) return;
       ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
       ctx.beginPath();
       ctx.moveTo(prevX, prevY);
       ctx.lineTo(x, y);
@@ -53,6 +49,7 @@ export default function SharedCanvas() {
     };
 
     const handleClear = () => {
+      if (!canvas || !ctx) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
 
@@ -61,11 +58,53 @@ export default function SharedCanvas() {
     socket.on("canvas:clear", handleClear);
 
     return () => {
-      window.removeEventListener("resize", setSize);
+      socket.off("connect", handleConnect);
       socket.off("canvas:draw", handleDraw);
       socket.off("canvas:history", handleHistory);
       socket.off("canvas:clear", handleClear);
     };
+  }, [roomId]);
+
+  // 2. AUTO-RESIZE LOGIC (The Fix)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    const resize = () => {
+      // Only resize if the container actually has width (is visible)
+      if (container.offsetWidth > 0) {
+        // Save the current drawing content
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        tempCtx?.drawImage(canvas, 0, 0);
+
+        // Resize
+        canvas.width = container.offsetWidth;
+        canvas.height = window.innerHeight * 0.6;
+        
+        // Restore settings
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+            ctx.lineWidth = 4;
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            // Restore content (optional, but nice to have)
+            ctx.drawImage(tempCanvas, 0, 0);
+        }
+        
+        // Ask server for history again to fill gaps if needed
+        socket.emit("join_room", roomId);
+      }
+    };
+
+    // Observer detects when the tab switches from "hidden" to "flex"
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+
+    return () => observer.disconnect();
   }, [roomId]);
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
@@ -81,12 +120,15 @@ export default function SharedCanvas() {
     
     if (ctx) {
       ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      
       ctx.beginPath();
       ctx.moveTo(prevPoint.current.x, prevPoint.current.y);
       ctx.lineTo(x, y);
       ctx.stroke();
 
-      // EMIT TO PARTNER
       socket.emit("canvas:draw", {
         prevX: prevPoint.current.x,
         prevY: prevPoint.current.y,
@@ -121,7 +163,7 @@ export default function SharedCanvas() {
   };
 
   return (
-    <div className="flex flex-col items-center w-full h-full">
+    <div ref={containerRef} className="flex flex-col items-center w-full h-full">
       <div className="bg-zinc-800 p-2 rounded-t-2xl w-full max-w-md flex justify-between items-center px-6">
          <span className="text-zinc-400 text-xs uppercase tracking-widest">Shared Canvas</span>
          <div className="flex gap-4">
