@@ -8,7 +8,8 @@ import { Sparkles, Flame, Snowflake, PartyPopper } from "lucide-react";
 import { useGameSounds } from "@/hooks/useGameSounds";
 import { useParams } from "next/navigation";
 
-export default function TruthDare() {
+// FIX: Accept the user prop here
+export default function TruthDare({ user }: { user?: any }) {
   const { playPop, playMatch } = useGameSounds();
   const params = useParams();
   const roomId = params.id as string;
@@ -19,7 +20,7 @@ export default function TruthDare() {
   const [loading, setLoading] = useState(false);
 
   const isButtonLocked = useRef(false);
-  const iRequestedIt = useRef(false);
+  const iRequestedIt = useRef(false); 
 
   useEffect(() => {
     if (!socket.connected) socket.connect();
@@ -32,12 +33,12 @@ export default function TruthDare() {
       playMatch();
       isButtonLocked.current = false;
 
-      // SAVE LOGIC: Only save if I requested it (prevent double save)
+      // Only save if I requested it
       if (iRequestedIt.current) {
           await supabase.from('history').insert({
               room_id: roomId,
               category: data.type.toLowerCase(),
-              // No user_id needed
+              user_id: user?.id || null, // Use the passed user ID
               content: { 
                   text: data.text, 
                   intensity: intensity 
@@ -50,7 +51,7 @@ export default function TruthDare() {
     return () => {
       socket.off("truth:new_challenge");
     };
-  }, [intensity, roomId]);
+  }, [intensity, roomId, user]); // Add user to dependency
 
   const handleGenerate = (type: "truth" | "dare") => {
     if (isButtonLocked.current) return;
