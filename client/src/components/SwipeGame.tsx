@@ -8,7 +8,7 @@ import { useParams } from "next/navigation";
 import { fetchMovies } from "@/app/actions"; 
 import { Loader2 } from "lucide-react"; 
 import { useGameSounds } from "@/hooks/useGameSounds";
-import { socket } from "@/lib/socket"; 
+import { socket } from "@/lib/socket"; // <--- CRITICAL FIX: Use shared socket
 import { supabase } from "@/lib/supabase";
 
 interface Movie {
@@ -28,26 +28,14 @@ export default function SwipeGame() {
   const [match, setMatch] = useState<{ title: string; poster: string } | null>(null);
   const [loading, setLoading] = useState(false);
   
-  // Start as NULL
-  const [page, setPage] = useState<number | null>(null);
-  
+  const [page, setPage] = useState(1);
   const isFetching = useRef(false);
   const movieCache = useRef<Map<number, Movie>>(new Map());
 
-  // 1. CALCULATE PAGE & SETUP SOCKET
+  // 1. SETUP SOCKET LISTENERS
   useEffect(() => {
-    // --- THE MATH TRICK ---
-    // Turn the Room ID (e.g. "A7X2") into a number (e.g. 14)
-    // This ensures both users get the same "random" page instantly.
-    const seed = roomId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const calculatedPage = (seed % 20) + 1; // Result is always 1-20
-    
-    console.log(`Room ${roomId} maps to Page ${calculatedPage}`);
-    setPage(calculatedPage);
-
-    // Socket Connection
     if (!socket.connected) socket.connect();
-    socket.emit("join_room", roomId);
+    socket.emit("join_room", roomId); // Ensure we are in the room
 
     const handleMatch = async (data: any) => {
       playMatch();
@@ -74,23 +62,19 @@ export default function SwipeGame() {
     return () => {
       socket.off("movie:match_found", handleMatch);
     };
-  }, []); // Run ONCE
+  }, []);
 
-  // 2. FETCH MOVIES
+  // 2. INITIAL FETCH
   useEffect(() => {
-    // Only fetch if we have a page number
-    if (page !== null) {
-      loadNewMovies(page);
-    }
-  }, [page]); 
+    loadMovies(1);
+  }, []);
 
-  const loadNewMovies = async (pageToFetch: number) => {
+  const loadMovies = async (pageToFetch: number) => {
     if (isFetching.current) return;
     isFetching.current = true;
     setLoading(true);
 
     try {
-      console.log("Fetching TMDB Page:", pageToFetch);
       const newMovies = await fetchMovies(pageToFetch);
       
       setCards((prev) => {
@@ -109,20 +93,24 @@ export default function SwipeGame() {
 
   const handleSwipe = (id: number, direction: "left" | "right") => {
     setCards((prev) => prev.filter((card) => card.id !== id));
-    if (socket) socket.emit("movie:swipe", { movieId: id, direction });
+    
+    // Emit on the SHARED socket
+    if (direction === "right") {
+       socket.emit("movie:swipe", { movieId: id, direction });
+    }
 
-    // Infinite Scroll
-    if (cards.length < 3 && !isFetching.current && page !== null) {
-      setPage(prev => (prev ? prev + 1 : prev));
+    if (cards.length < 3 && !isFetching.current) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      loadMovies(nextPage);
     }
   };
 
-  // LOADING STATE
-  if ((loading && cards.length === 0) || page === null) {
+  if (loading && cards.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-purple-400">
         <Loader2 className="w-10 h-10 animate-spin mb-4" />
-        <p className="text-zinc-400 animate-pulse">Syncing Cinema...</p>
+        <p className="text-zinc-400 animate-pulse">Loading Cinema...</p>
       </div>
     );
   }

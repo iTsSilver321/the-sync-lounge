@@ -1,11 +1,12 @@
 import { io } from "socket.io-client";
 
-// If we are in production, use the Environment Variable. 
-// If we are local, use localhost:3001.
+// Use the environment variable if available (Production), otherwise fallback to localhost (Development)
 const URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
 
-console.log("Attempting to connect socket to:", URL);
+console.log("🔌 Socket connecting to:", URL);
 
 export const socket = io(URL, {
-  autoConnect: false, // We connect manually in the useEffect
+  autoConnect: false, // We manually connect in components
+  transports: ['websocket', 'polling'], // Fallback to polling if websocket fails (important for some networks)
+  withCredentials: true,
 });
