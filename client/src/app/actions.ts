@@ -1,5 +1,6 @@
 "use server";
 
+// 1. Fetch Movies (TMDB)
 export async function fetchMovies(page = 1) {
   const apiKey = process.env.TMDB_ACCESS_TOKEN;
   if (!apiKey) {
@@ -14,22 +15,21 @@ export async function fetchMovies(page = 1) {
         accept: "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      next: { revalidate: 3600 }, // Cache data for 1 hour
+      next: { revalidate: 3600 },
     });
 
     if (!res.ok) throw new Error("Failed to fetch movies");
 
     const data = await res.json();
     
-    // Transform the messy API data into our clean format
     return data.results.map((movie: any) => ({
       id: movie.id,
       title: movie.title,
       poster: movie.poster_path 
         ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-        : "https://placehold.co/500x750?text=No+Poster", // Fallback
+        : "https://placehold.co/500x750?text=No+Poster", 
       overview: movie.overview,
-      rating: Math.round(movie.vote_average * 10) + "%", // "78%"
+      rating: Math.round(movie.vote_average * 10) + "%",
     }));
   } catch (error) {
     console.error("TMDB Error:", error);

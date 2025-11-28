@@ -1,0 +1,230 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { supabase } from "@/lib/supabase";
+import { socket } from "@/lib/socket";
+import { motion, AnimatePresence } from "framer-motion";
+import { Flame, Send, Loader2, CheckCircle, Lock } from "lucide-react";
+import { useGameSounds } from "@/hooks/useGameSounds";
+import { useParams } from "next/navigation"; 
+
+export default function DailyPulse({ user }: { user: any }) {
+  const { playMatch, playPop } = useGameSounds();
+  const params = useParams();
+  const roomId = params.id as string;
+
+  const [loading, setLoading] = useState(true);
+  // We track status in a ref too, so socket listeners can see the 'current' real value
+  const [status, setStatus] = useState<"loading" | "answering" | "waiting" | "complete">("loading");
+  const statusRef = useRef(status); 
+
+  const [question, setQuestion] = useState("");
+  const [myAnswer, setMyAnswer] = useState("");
+  const [partnerAnswer, setPartnerAnswer] = useState("");
+  const [streak, setStreak] = useState(0);
+  
+  const coupleIdRef = useRef<string | null>(null);
+  const today = new Date().toISOString().split('T')[0];
+
+  // Keep ref in sync with state
+  useEffect(() => { statusRef.current = status; }, [status]);
+
+  useEffect(() => {
+    if (!socket.connected) socket.connect();
+    socket.emit("join_room", roomId);
+
+    fetchDaily();
+
+    // 1. Handle New Question
+    const handleNewQuestion = (text: string) => {
+        console.log("Received Question:", text);
+        setQuestion(text);
+        
+        // FIX: Only reset to "answering" if we are currently loading
+        // This prevents the double-generation from wiping your progress!
+        if (statusRef.current === "loading") {
+            setStatus("answering");
+        }
+        
+        setLoading(false);
+
+        // Save question if needed (Creator only)
+        if (coupleIdRef.current) {
+             supabase.from('daily_sync').upsert({
+                couple_id: coupleIdRef.current,
+                date: today,
+                question: text
+            }, { onConflict: 'couple_id, date', ignoreDuplicates: true }).then();
+        }
+    };
+
+    // 2. Handle Partner Update
+    const handlePartnerSubmit = () => {
+        console.log("Partner submitted! Refreshing...");
+        fetchDaily();
+    };
+
+    socket.on("daily:new_question", handleNewQuestion);
+    socket.on("daily:partner_submitted", handlePartnerSubmit);
+
+    return () => { 
+        socket.off("daily:new_question", handleNewQuestion);
+        socket.off("daily:partner_submitted", handlePartnerSubmit);
+    };
+  }, []);
+
+  const fetchDaily = async () => {
+    if (!user) return;
+
+    const { data: profile } = await supabase.from('profiles').select('couple_id, streak_count').eq('id', user.id).single();
+    if (!profile || !profile.couple_id) { setLoading(false); return; }
+    
+    coupleIdRef.current = profile.couple_id;
+    setStreak(profile.streak_count || 0);
+
+    const { data: daily } = await supabase
+        .from('daily_sync')
+        .select('*')
+        .eq('couple_id', profile.couple_id)
+        .eq('date', today)
+        .maybeSingle();
+
+    if (!daily) {
+        if (statusRef.current === "loading") {
+             console.log("Requesting daily...");
+             socket.emit("daily:generate");
+        }
+    } else {
+        setQuestion(daily.question);
+        
+        const isUserA = daily.user_a === user.id;
+        const isUserB = daily.user_b === user.id;
+        
+        // Check Answers
+        const answerA = daily.answer_a;
+        const answerB = daily.answer_b;
+        
+        // My Answer is...
+        const mine = isUserA ? answerA : (isUserB ? answerB : null);
+        const theirs = isUserA ? answerB : answerA;
+
+        if (answerA && answerB) {
+            setStatus("complete");
+            setMyAnswer(mine);
+            setPartnerAnswer(theirs);
+        } else if (mine) {
+            setStatus("waiting");
+            setMyAnswer(mine);
+        } else {
+            setStatus("answering");
+        }
+        setLoading(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!coupleIdRef.current) return;
+    playPop();
+    setLoading(true);
+    
+    // USE RPC FUNCTION (Atomic Save)
+    const { data, error } = await supabase.rpc('submit_daily_answer', {
+        p_couple_id: coupleIdRef.current,
+        p_date: today,
+        p_user_id: user.id,
+        p_answer: myAnswer
+    });
+
+    if (error) {
+        console.error("Submit failed:", error);
+        setLoading(false);
+        return;
+    }
+
+    socket.emit("daily:submit");
+    
+    // Update UI based on return from DB
+    const isComplete = data.answer_a && data.answer_b;
+    
+    if (isComplete) { 
+        setStatus("complete");
+        playMatch();
+        
+        // Increment Streak (Client side check to avoid double increment)
+        if (statusRef.current !== 'complete') {
+            await supabase.from('profiles').update({ streak_count: streak + 1 }).eq('couple_id', coupleIdRef.current);
+            setStreak(s => s + 1);
+        }
+
+        // Show partner answer
+        const amIA = data.user_a === user.id;
+        setPartnerAnswer(amIA ? data.answer_b : data.answer_a);
+    } else {
+        setStatus("waiting");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="w-full h-full p-6 flex flex-col items-center pt-10 relative overflow-hidden">
+       <div className="absolute top-4 right-4 flex items-center gap-1 bg-orange-500/20 border border-orange-500/50 px-3 py-1 rounded-full text-orange-400 text-xs font-bold">
+          <Flame size={14} fill="currentColor" />
+          <span>{streak} Day Streak</span>
+       </div>
+
+       <div className="w-full max-w-md mt-8">
+          <h2 className="text-zinc-500 text-xs font-bold uppercase tracking-widest mb-2 text-center">Daily Pulse</h2>
+          
+          <div className="glass-panel p-8 rounded-3xl border border-white/10 shadow-2xl mb-6 text-center relative">
+             {loading && !question ? <Loader2 className="animate-spin mx-auto text-purple-400" /> : (
+                 <p className="text-xl md:text-2xl font-medium text-white leading-relaxed">"{question}"</p>
+             )}
+          </div>
+
+          <AnimatePresence mode="wait">
+            {status === "answering" && (
+                <motion.div key="ans" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-4">
+                    <textarea 
+                        value={myAnswer}
+                        onChange={(e) => setMyAnswer(e.target.value)}
+                        placeholder="Type your answer..."
+                        className="w-full h-32 bg-zinc-900/50 border border-zinc-700 rounded-2xl p-4 text-white focus:outline-none focus:border-purple-500 transition-all resize-none"
+                    />
+                    <button onClick={handleSubmit} disabled={!myAnswer || loading} className="w-full py-4 bg-white text-black rounded-xl font-bold hover:scale-[1.02] transition-transform flex items-center justify-center gap-2">
+                        {loading ? "Saving..." : <>Post Daily <Send size={16} /></>}
+                    </button>
+                </motion.div>
+            )}
+
+            {status === "waiting" && (
+                <motion.div key="wait" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center p-8 bg-zinc-900/50 rounded-2xl border border-dashed border-zinc-800">
+                    <div className="w-12 h-12 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Lock size={20} className="text-zinc-500" />
+                    </div>
+                    <h3 className="text-white font-bold">Answer Locked</h3>
+                    <p className="text-zinc-500 text-sm mt-1">Waiting for your partner to answer...</p>
+                </motion.div>
+            )}
+
+            {status === "complete" && (
+                <motion.div key="done" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="space-y-4">
+                    <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-6 rounded-2xl border border-white/10">
+                        <p className="text-xs text-purple-300 mb-2 font-bold">YOU</p>
+                        <p className="text-white">{myAnswer}</p>
+                    </div>
+                    <div className="bg-zinc-800/40 p-6 rounded-2xl border border-white/5">
+                        <p className="text-xs text-zinc-400 mb-2 font-bold">PARTNER</p>
+                        <p className="text-zinc-200">{partnerAnswer}</p>
+                    </div>
+                    <div className="text-center py-4">
+                        <span className="text-green-400 text-sm flex items-center justify-center gap-2">
+                            <CheckCircle size={16} /> Daily Complete!
+                        </span>
+                    </div>
+                </motion.div>
+            )}
+          </AnimatePresence>
+       </div>
+    </div>
+  );
+}
