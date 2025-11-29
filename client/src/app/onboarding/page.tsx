@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Heart, Copy, Loader2, ArrowRight, Users, Sparkles } from "lucide-react";
+import { Heart, Copy, Loader2, ArrowRight, Users, Sparkles, AlertCircle } from "lucide-react";
 
 export default function Onboarding() {
   const router = useRouter();
@@ -13,6 +13,7 @@ export default function Onboarding() {
   const [generatedCode, setGeneratedCode] = useState("");
   const [inputCode, setInputCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
   const waitingCoupleId = useRef<string | null>(null);
 
@@ -54,14 +55,14 @@ export default function Onboarding() {
 
 
   const createCouple = async () => {
-    setLoading(true);
+    setLoading(true); setErrorMsg(null);
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
     
     const { data: couple, error: createError } = await supabase.from('couples').insert({ code }).select().single();
-    if (createError) { alert(createError.message); setLoading(false); return; }
+    if (createError) { setErrorMsg(createError.message); setLoading(false); return; }
 
     const { error: updateError } = await supabase.from('profiles').update({ couple_id: couple.id }).eq('id', user.id);
-    if (updateError) { alert(updateError.message); setLoading(false); return; }
+    if (updateError) { setErrorMsg(updateError.message); setLoading(false); return; }
 
     waitingCoupleId.current = couple.id;
     setGeneratedCode(code);
@@ -70,12 +71,12 @@ export default function Onboarding() {
   };
 
   const joinCouple = async () => {
-    setLoading(true);
+    setLoading(true); setErrorMsg(null);
     const { data: couple, error: findError } = await supabase.from('couples').select('id').eq('code', inputCode.toUpperCase()).single();
-    if (findError || !couple) { alert("Invalid Code!"); setLoading(false); return; }
+    if (findError || !couple) { setErrorMsg("Invalid or Expired Code"); setLoading(false); return; }
 
     const { error: updateError } = await supabase.from('profiles').update({ couple_id: couple.id }).eq('id', user.id);
-    if (updateError) { alert(updateError.message); setLoading(false); return; }
+    if (updateError) { setErrorMsg(updateError.message); setLoading(false); return; }
 
     router.push(`/room/${couple.id}`);
   };
@@ -90,13 +91,11 @@ export default function Onboarding() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-[#09090b] p-6 relative overflow-hidden selection:bg-purple-500/30">
       
-      {/* Ambient Background */}
       <div className="absolute top-[-20%] left-[-20%] w-[50vw] h-[50vw] bg-purple-900/20 rounded-full blur-[120px]" />
       <div className="absolute bottom-[-20%] right-[-20%] w-[50vw] h-[50vw] bg-pink-900/20 rounded-full blur-[120px]" />
 
       <div className="w-full max-w-md relative z-10">
         
-        {/* Header */}
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -115,6 +114,20 @@ export default function Onboarding() {
         <div className="glass-panel p-1 rounded-3xl border border-white/10 shadow-2xl bg-black/40 backdrop-blur-xl overflow-hidden">
           <div className="p-6 md:p-8">
             
+            {/* Error Banner */}
+            <AnimatePresence>
+                {errorMsg && (
+                    <motion.div 
+                        initial={{ opacity: 0, height: 0, marginBottom: 0 }} 
+                        animate={{ opacity: 1, height: "auto", marginBottom: 20 }} 
+                        exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                        className="rounded-xl p-3 bg-red-500/10 border border-red-500/20 text-red-200 text-xs flex items-center gap-2"
+                    >
+                        <AlertCircle size={16} /> {errorMsg}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             <AnimatePresence mode="wait">
               
               {/* MODE: SELECT */}
@@ -192,7 +205,7 @@ export default function Onboarding() {
                         autoFocus
                         maxLength={6}
                         value={inputCode}
-                        onChange={(e) => setInputCode(e.target.value.toUpperCase())}
+                        onChange={(e) => { setInputCode(e.target.value.toUpperCase()); setErrorMsg(null); }}
                         className="w-full bg-zinc-950 border-2 border-zinc-800 focus:border-purple-500 rounded-2xl p-6 text-center text-4xl font-mono font-bold text-white tracking-[0.2em] outline-none transition-all placeholder:text-zinc-800"
                         placeholder="------"
                       />

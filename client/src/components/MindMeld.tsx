@@ -1,83 +1,75 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Send, Sparkles, RefreshCw, Loader2 } from "lucide-react";
+import { Send, Sparkles, RefreshCw, Loader2, Fingerprint } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useGameSounds } from "@/hooks/useGameSounds";
-import { socket } from "@/lib/socket";
+import { connectSocket, socket } from "@/lib/socket";
 import { supabase } from "@/lib/supabase";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function MindMeld({ user }: { user?: any }) {
   const { playPop, playMatch } = useGameSounds();
   const params = useParams();
   const roomId = params.id as string;
 
-  // State
+  // State Machine: 'input' -> 'waiting' -> 'syncing' (Animation) -> 'revealed'
+  const [gamePhase, setGamePhase] = useState<"input" | "waiting" | "syncing" | "revealed">("input");
+  
   const [question, setQuestion] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [myAnswer, setMyAnswer] = useState("");
   const [partnerStatus, setPartnerStatus] = useState("Waiting...");
-  const [isRevealed, setIsRevealed] = useState(false);
   const [partnerAnswer, setPartnerAnswer] = useState("");
 
-  // REFS (Crucial for Socket Listeners)
+  // REFS
   const questionRef = useRef<string | null>(null);
   const myAnswerRef = useRef("");
   const isButtonLocked = useRef(false);
   const userRef = useRef(user);
 
-  // Sync user ref
   useEffect(() => { userRef.current = user; }, [user]);
 
   useEffect(() => {
-    if (!socket.connected) socket.connect();
+    connectSocket();
     socket.emit("join_room", roomId);
 
-    // 1. New Question
     const handleNewQuestion = (text: string) => {
       setQuestion(text);
-      questionRef.current = text; // Update ref immediately
+      questionRef.current = text;
       setLoading(false);
       isButtonLocked.current = false;
       
-      // Reset
+      // Reset Round
       setMyAnswer("");
       myAnswerRef.current = "";
       setPartnerAnswer("");
-      setIsRevealed(false);
+      setGamePhase("input");
       setPartnerStatus("Waiting...");
     };
 
-    // 2. Partner Typing
     const handlePartnerTyping = (isTyping: boolean) => {
-      // We use a functional update or ref check here if needed, but state is fine for display
       setPartnerStatus((prev) => {
-          if (isRevealed) return prev; // Don't change if revealed
+          if (gamePhase === "revealed") return prev; 
           return isTyping ? "Partner is typing... 💬" : "Waiting...";
       });
     };
 
-    // 3. Partner Submitted
     const handlePartnerSubmitted = () => {
       setPartnerStatus("Partner is Ready! ✅");
     };
 
-    // 4. Reveal (AND SAVE)
     const handleReveal = async (data: { answer: string }) => {
-      playMatch();
-      setIsRevealed(true);
       setPartnerAnswer(data.answer);
+      setGamePhase("syncing"); // Trigger the "Psychic" Animation phase
       
       const currentQ = questionRef.current;
       const currentA = myAnswerRef.current;
       const currentUser = userRef.current;
 
       if (currentQ && currentA && data.answer) {
-          // Save to History
-          // We use the user ID if available, otherwise null (anonymous room)
           const userIdToSave = currentUser?.id || null;
-
-          const { error } = await supabase.from('history').insert({
+          await supabase.from('history').insert({
             room_id: roomId,
             category: 'mind',
             user_id: userIdToSave,
@@ -87,8 +79,6 @@ export default function MindMeld({ user }: { user?: any }) {
               answerB: data.answer
             }
           });
-          
-          if (error) console.error("Mind save error:", error);
       }
     };
 
@@ -121,28 +111,35 @@ export default function MindMeld({ user }: { user?: any }) {
   const handleTyping = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setMyAnswer(val);
-    myAnswerRef.current = val; // Sync Ref
+    myAnswerRef.current = val;
     socket.emit("mind:typing", val.length > 0);
   };
 
   const handleSubmit = () => {
     if (!myAnswer) return;
     socket.emit("mind:submit", { answer: myAnswer });
+    setGamePhase("waiting");
     setPartnerStatus((prev) => prev.includes("Partner") ? prev : "Waiting for partner...");
+  };
+
+  const triggerReveal = () => {
+    playMatch();
+    setGamePhase("revealed");
   };
 
   const resetGame = () => {
     setQuestion(null);
     questionRef.current = null;
+    setGamePhase("input");
   };
 
+  // 1. SELECTION SCREEN
   if (!question) {
     return (
       <div className="w-full max-w-md p-6 flex flex-col items-center animate-in fade-in zoom-in">
         <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 mb-8">
           Select a Vibe
         </h2>
-        
         {loading ? (
           <div className="flex flex-col items-center gap-4 text-zinc-400">
             <Loader2 className="animate-spin" />
@@ -167,6 +164,40 @@ export default function MindMeld({ user }: { user?: any }) {
     );
   }
 
+  // 2. PSYCHIC REVEAL ANIMATION (The "Juice")
+  if (gamePhase === "syncing") {
+    return (
+      <div className="flex flex-col items-center justify-center w-full h-[60vh] relative" onClick={triggerReveal}>
+         <div className="absolute inset-0 flex items-center justify-center">
+            {/* Left Orb (You) */}
+            <motion.div 
+              initial={{ x: -150, opacity: 0, scale: 0.5 }}
+              animate={{ x: -20, opacity: 1, scale: 1 }}
+              transition={{ duration: 1.5, type: "spring" }}
+              className="w-24 h-24 rounded-full bg-purple-500 blur-xl absolute mix-blend-screen"
+            />
+            {/* Right Orb (Partner) */}
+            <motion.div 
+              initial={{ x: 150, opacity: 0, scale: 0.5 }}
+              animate={{ x: 20, opacity: 1, scale: 1 }}
+              transition={{ duration: 1.5, type: "spring", delay: 0.2 }}
+              className="w-24 h-24 rounded-full bg-pink-500 blur-xl absolute mix-blend-screen"
+            />
+         </div>
+         
+         <motion.button
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: 1, repeat: Infinity, repeatType: "reverse", duration: 1 }}
+            className="z-10 bg-white text-black px-8 py-4 rounded-full font-bold shadow-[0_0_40px_rgba(255,255,255,0.3)] flex items-center gap-2"
+         >
+            <Fingerprint /> TAP TO SYNC
+         </motion.button>
+      </div>
+    );
+  }
+
+  // 3. MAIN GAME UI (Input or Result)
   return (
     <div className="flex flex-col items-center w-full max-w-md p-6 space-y-6 text-white animate-in slide-in-from-bottom-4">
       <div className="bg-zinc-800/80 backdrop-blur p-6 rounded-2xl w-full text-center shadow-xl border border-zinc-700/50 relative">
@@ -176,30 +207,50 @@ export default function MindMeld({ user }: { user?: any }) {
       </div>
 
       <div className="flex flex-col w-full space-y-4">
+        {/* YOU */}
         <div className="space-y-1">
           <label className="text-xs text-zinc-500 ml-2 font-bold tracking-wider">YOU</label>
           <input 
             type="text" 
             value={myAnswer} 
             onChange={handleTyping} 
-            disabled={isRevealed} 
+            disabled={gamePhase !== "input"} 
             className="w-full bg-zinc-900/50 border border-zinc-700 rounded-xl p-4 text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all disabled:opacity-50" 
             placeholder="Type your answer..." 
           />
         </div>
+
+        {/* PARTNER */}
         <div className="space-y-1">
           <label className="text-xs text-zinc-500 ml-2 font-bold tracking-wider">PARTNER</label>
-          <div className={`w-full h-[58px] bg-zinc-900/50 border border-zinc-700 rounded-xl px-4 flex items-center justify-between ${isRevealed ? "text-white" : "text-zinc-500 italic"}`}>
-            {isRevealed ? <span>{partnerAnswer || "Same as you!"}</span> : <span className="flex items-center gap-2">{partnerStatus}</span>}
-          </div>
+          <motion.div 
+            layout
+            className={`w-full min-h-[58px] bg-zinc-900/50 border border-zinc-700 rounded-xl px-4 py-4 flex items-center justify-between ${gamePhase === "revealed" ? "text-white bg-gradient-to-r from-purple-900/20 to-pink-900/20 border-purple-500/30" : "text-zinc-500 italic"}`}
+          >
+            {gamePhase === "revealed" ? (
+                <motion.span initial={{ opacity: 0, filter: "blur(10px)" }} animate={{ opacity: 1, filter: "blur(0px)" }}>
+                    {partnerAnswer}
+                </motion.span>
+            ) : (
+                <span className="flex items-center gap-2 text-sm">{partnerStatus}</span>
+            )}
+          </motion.div>
         </div>
       </div>
 
-      {!isRevealed ? (
+      {gamePhase === "input" && (
         <button onClick={handleSubmit} disabled={!myAnswer} className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-bold text-lg shadow-lg shadow-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2">
           Lock In Answer <Send size={18} />
         </button>
-      ) : (
+      )}
+
+      {gamePhase === "waiting" && (
+         <div className="text-zinc-500 text-sm animate-pulse flex items-center gap-2">
+            <Loader2 className="animate-spin" size={16} /> Waiting for partner to sync...
+         </div>
+      )}
+
+      {gamePhase === "revealed" && (
         <button onClick={resetGame} className="w-full py-4 bg-zinc-800 text-zinc-300 rounded-xl font-bold hover:bg-zinc-700 transition-colors">Pick New Vibe</button>
       )}
     </div>

@@ -8,7 +8,7 @@ import { useParams } from "next/navigation";
 import { fetchMovies } from "@/app/actions"; 
 import { Loader2 } from "lucide-react"; 
 import { useGameSounds } from "@/hooks/useGameSounds";
-import { socket } from "@/lib/socket"; 
+import { connectSocket, socket } from "@/lib/socket"; 
 import { supabase } from "@/lib/supabase";
 
 interface Movie {
@@ -46,7 +46,7 @@ export default function SwipeGame() {
     setPage(calculatedPage);
 
     // Socket Connection
-    if (!socket.connected) socket.connect();
+    connectSocket();
     socket.emit("join_room", roomId);
 
     const handleMatch = async (data: any) => {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { socket } from "@/lib/socket";
+import { connectSocket, socket } from "@/lib/socket";
 import { motion, AnimatePresence } from "framer-motion";
 import { Flame, Send, Loader2, CheckCircle, Lock } from "lucide-react";
 import { useGameSounds } from "@/hooks/useGameSounds";
@@ -30,7 +30,7 @@ export default function DailyPulse({ user }: { user: any }) {
   useEffect(() => { statusRef.current = status; }, [status]);
 
   useEffect(() => {
-    if (!socket.connected) socket.connect();
+    connectSocket();
     socket.emit("join_room", roomId);
 
     fetchDaily();

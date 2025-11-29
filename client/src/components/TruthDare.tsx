@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { socket } from "@/lib/socket";
+import { connectSocket, socket } from "@/lib/socket";
 import { supabase } from "@/lib/supabase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Flame, Snowflake, PartyPopper } from "lucide-react";
@@ -23,7 +23,7 @@ export default function TruthDare({ user }: { user?: any }) {
   const iRequestedIt = useRef(false); 
 
   useEffect(() => {
-    if (!socket.connected) socket.connect();
+    connectSocket();
     socket.emit("join_room", roomId);
 
     socket.on("truth:new_challenge", async (data) => {

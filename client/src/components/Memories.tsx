@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { socket } from "@/lib/socket";
+import { socket, connectSocket } from "@/lib/socket"; // <--- Added connectSocket import
 import { motion, LayoutGroup } from "framer-motion";
 import { Loader2, CalendarHeart, BookHeart } from "lucide-react";
 import { useParams } from "next/navigation";
@@ -23,6 +23,10 @@ export default function Memories() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // 1. Ensure Secure Connection (New Logic)
+    connectSocket(); 
+
+    // 2. Fetch Initial Data
     fetchFullHistory();
 
     const handleRefresh = () => setTimeout(() => fetchFullHistory(), 1000);
@@ -45,7 +49,7 @@ export default function Memories() {
     const { data: historyData } = await supabase
       .from('history')
       .select('*')
-      .eq('room_id', roomId) // Simple room check
+      .eq('room_id', roomId)
       .order('created_at', { ascending: false });
 
     // Fetch Daily Syncs

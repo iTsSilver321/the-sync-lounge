@@ -1,12 +1,25 @@
 import { io } from "socket.io-client";
+import { supabase } from "./supabase";
 
-// Use the environment variable if available (Production), otherwise fallback to localhost (Development)
 const URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
 
-console.log("🔌 Socket connecting to:", URL);
-
 export const socket = io(URL, {
-  autoConnect: false, // We manually connect in components
-  transports: ['websocket', 'polling'], // Fallback to polling if websocket fails (important for some networks)
+  autoConnect: false,
+  transports: ['websocket', 'polling'],
   withCredentials: true,
+  // We will inject the token dynamically before connecting
 });
+
+export const connectSocket = async () => {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+
+  if (token) {
+    socket.auth = { token }; // Send token to server
+    if (!socket.connected) {
+        socket.connect();
+    }
+  } else {
+    console.error("🔒 Cannot connect: No Auth Session");
+  }
+};

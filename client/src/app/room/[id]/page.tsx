@@ -10,8 +10,10 @@ import TruthDare from "@/components/TruthDare";
 import DailyPulse from "@/components/DailyPulse";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
-import { Film, Brain, Palette, BookHeart, Zap, CalendarHeart, User, LogOut, Loader2 } from "lucide-react";
+import { motion, AnimatePresence, useAnimation } from "framer-motion";
+import { Film, Brain, Palette, BookHeart, Zap, CalendarHeart, LogOut, Loader2, Heart } from "lucide-react";
+import { useGameSounds } from "@/hooks/useGameSounds";
+import { socket, connectSocket } from "@/lib/socket";
 
 const TABS = [
   { id: "movies", icon: Film, label: "Cinema" },
@@ -23,10 +25,17 @@ const TABS = [
 ];
 
 export default function GameRoom() {
+  const { playMatch } = useGameSounds(); 
   const params = useParams();
   const roomId = params.id as string;
   const [activeTab, setActiveTab] = useState("movies");
   const [user, setUser] = useState<any>(null);
+  
+  // Heartbeat Controls
+  const heartControls = useAnimation();
+
+  // Get current label
+  const activeTabLabel = TABS.find(t => t.id === activeTab)?.label || "The Lounge";
 
   useEffect(() => {
     const getUser = async () => {
@@ -34,7 +43,33 @@ export default function GameRoom() {
         setUser(data.user);
     };
     getUser();
+
+    // --- HEARTBEAT LISTENER ---
+    connectSocket(); 
+    
+    const handleHeartbeat = async () => {
+        playMatch();
+        if (typeof navigator !== "undefined" && navigator.vibrate) {
+            navigator.vibrate([50, 100, 50]);
+        }
+        await heartControls.start({ 
+            scale: [1, 1.5, 1], 
+            color: ["#ffffff", "#ec4899", "#ffffff"],
+            transition: { duration: 0.4 } 
+        });
+    };
+
+    socket.on("heart:beat", handleHeartbeat);
+
+    return () => {
+        socket.off("heart:beat", handleHeartbeat);
+    };
   }, []);
+
+  const sendHeartbeat = () => {
+      socket.emit("heart:beat");
+      heartControls.start({ scale: [1, 0.8, 1.2, 1], transition: { duration: 0.3 } });
+  };
 
   return (
     <main className="flex min-h-screen flex-col bg-zinc-950 text-white relative overflow-hidden">
@@ -52,8 +87,16 @@ export default function GameRoom() {
                 <span className="font-bold text-white text-xs">Us</span>
             </div>
             <div>
-                <h1 className="text-sm font-bold text-white leading-none">The Lounge</h1>
-                <div className="flex items-center gap-1 opacity-50">
+                {/* DYNAMIC TITLE */}
+                <motion.h1 
+                    key={activeTabLabel}
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-sm font-bold text-white leading-none uppercase tracking-wide"
+                >
+                    {activeTabLabel}
+                </motion.h1>
+                <div className="flex items-center gap-1 opacity-50 mt-1">
                     <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                     <span className="text-[10px] font-mono uppercase tracking-widest">{roomId}</span>
                 </div>
@@ -65,7 +108,7 @@ export default function GameRoom() {
         </Link>
       </header>
 
-      {/* 2. MAIN CONTENT AREA (With Transitions) */}
+      {/* 2. MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col items-center justify-center relative w-full max-w-md mx-auto z-10 px-4 pb-28 pt-4">
         <AnimatePresence mode="wait">
             <motion.div
@@ -89,26 +132,48 @@ export default function GameRoom() {
         </AnimatePresence>
       </div>
 
-      {/* 3. FLOATING DOCK NAVIGATION */}
+      {/* 3. HEARTBEAT BUTTON */}
+      <div className="fixed bottom-24 right-6 z-50">
+          <motion.button
+            animate={heartControls}
+            onClick={sendHeartbeat}
+            className="w-14 h-14 bg-gradient-to-tr from-pink-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg shadow-pink-500/30 border border-white/20 active:scale-90 transition-transform"
+          >
+              <Heart fill="white" size={24} className="text-white" />
+          </motion.button>
+      </div>
+
+      {/* 4. FLOATING DOCK NAVIGATION */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[95%] max-w-[400px] z-50">
-        <div className="glass-panel rounded-2xl p-1.5 flex justify-between items-center shadow-2xl shadow-black/50 backdrop-blur-xl border-white/10">
+        <div className="glass-panel rounded-2xl p-2 flex justify-between items-end shadow-2xl shadow-black/50 backdrop-blur-xl border-white/10">
             {TABS.map((tab) => {
                 const isActive = activeTab === tab.id;
                 return (
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className="relative flex-1 flex flex-col items-center justify-center py-3 gap-1 group"
+                        className="relative flex-1 flex flex-col items-center justify-center py-2 gap-1.5 group"
                     >
                         {isActive && (
-                            <motion.div 
-                                layoutId="active-pill"
-                                className="absolute inset-0 bg-white/10 rounded-xl"
-                                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                            />
+                            <>
+                                <motion.div 
+                                    layoutId="active-pill"
+                                    className="absolute inset-0 bg-white/10 rounded-xl -z-10"
+                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                />
+                                <motion.div
+                                    initial={{ scale: 0.5, opacity: 0 }}
+                                    animate={{ scale: 1.5, opacity: [0, 0.5, 0] }}
+                                    transition={{ duration: 0.4 }}
+                                    className="absolute inset-0 bg-purple-500/30 rounded-xl blur-lg -z-20"
+                                />
+                            </>
                         )}
                         <span className={`relative z-10 transition-colors duration-300 ${isActive ? "text-white" : "text-zinc-500 group-hover:text-zinc-300"}`}>
                             <tab.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+                        </span>
+                        <span className={`text-[9px] font-medium tracking-wide uppercase transition-colors duration-300 ${isActive ? "text-white" : "text-zinc-600 group-hover:text-zinc-400"}`}>
+                            {tab.label}
                         </span>
                     </button>
                 );
