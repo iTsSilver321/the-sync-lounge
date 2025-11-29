@@ -8,22 +8,48 @@
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: radial-gradient(circle at 50% 120%, #4c0519, #2e1065, #09090b);
+  /* Deeper, richer background gradient */
+  background: radial-gradient(circle at 50% 120%, #2e1065, #09090b 60%); 
   background-attachment: fixed;
   min-height: 100dvh;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-geist-sans), -apple-system, sans-serif; /* Use Geist */
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased; /* Crisp text */
 }
 
-/* Hide Scrollbar but keep functionality */
-::-webkit-scrollbar {
-  display: none;
-}
+::-webkit-scrollbar { display: none; }
 
-/* Glassmorphism Utilities */
+/* --- PREMIUM UTILITIES --- */
+
+/* High-End Glass: Adds a subtle gradient + noise-like texture via border */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 
+    0 4px 24px -1px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.02) inset; /* Inner glow */
+}
+
+/* Premium Input Fields */
+.glass-input {
+  background: rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-input:focus {
+  background: rgba(0, 0, 0, 0.4);
+  border-color: rgba(168, 85, 247, 0.5); /* Purple accent */
+  box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.1);
+  outline: none;
+}
+
+/* Juice: Button Press Effect */
+.btn-bounce {
+  transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-bounce:active {
+  transform: scale(0.96);
 }

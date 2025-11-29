@@ -5,18 +5,27 @@ import { useParams } from "next/navigation";
 import SwipeGame from "@/components/SwipeGame";
 import MindMeld from "@/components/MindMeld";
 import SharedCanvas from "@/components/SharedCanvas";
-import { Film, Brain, Palette, BookHeart, Zap, CalendarHeart, User } from "lucide-react";
 import Memories from "@/components/Memories";
 import TruthDare from "@/components/TruthDare";
 import DailyPulse from "@/components/DailyPulse";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
+import { Film, Brain, Palette, BookHeart, Zap, CalendarHeart, User, LogOut, Loader2 } from "lucide-react";
+
+const TABS = [
+  { id: "movies", icon: Film, label: "Cinema" },
+  { id: "daily", icon: CalendarHeart, label: "Daily" },
+  { id: "truth", icon: Zap, label: "Play" },
+  { id: "canvas", icon: Palette, label: "Draw" },
+  { id: "mind", icon: Brain, label: "Mind" },
+  { id: "memories", icon: BookHeart, label: "Memory" },
+];
 
 export default function GameRoom() {
   const params = useParams();
   const roomId = params.id as string;
-
-  const [activeTab, setActiveTab] = useState<"movies" | "mind" | "canvas" | "memories" | "truth" | "daily">("movies");
+  const [activeTab, setActiveTab] = useState("movies");
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
@@ -28,75 +37,84 @@ export default function GameRoom() {
   }, []);
 
   return (
-    <main className="flex min-h-screen flex-col bg-zinc-950 text-white">
+    <main className="flex min-h-screen flex-col bg-zinc-950 text-white relative overflow-hidden">
       
-      {/* Header */}
-      <header className="p-6 text-center z-10 relative">
-        <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">
-          UsTime
-        </h1>
-        <div className="mt-2 inline-block px-3 py-1 bg-zinc-800 rounded-full border border-zinc-700">
-          <span className="text-xs text-zinc-400 tracking-widest font-mono">ROOM: {roomId}</span>
+      {/* Background Ambience */}
+      <div className="fixed inset-0 pointer-events-none">
+          <div className="absolute top-[-10%] right-[-10%] w-[40vw] h-[40vw] bg-purple-900/20 rounded-full blur-[100px]" />
+          <div className="absolute bottom-[-10%] left-[-10%] w-[40vw] h-[40vw] bg-pink-900/20 rounded-full blur-[100px]" />
+      </div>
+
+      {/* 1. CINEMATIC HEADER */}
+      <header className="p-6 flex justify-between items-center z-20 relative">
+        <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-900/50">
+                <span className="font-bold text-white text-xs">Us</span>
+            </div>
+            <div>
+                <h1 className="text-sm font-bold text-white leading-none">The Lounge</h1>
+                <div className="flex items-center gap-1 opacity-50">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                    <span className="text-[10px] font-mono uppercase tracking-widest">{roomId}</span>
+                </div>
+            </div>
         </div>
         
-        {/* Profile Link */}
-        <Link href="/profile" className="absolute top-6 right-6 p-2 bg-zinc-800 rounded-full hover:bg-zinc-700 transition-colors">
-             <User size={20} className="text-zinc-400" />
+        <Link href="/" className="w-10 h-10 glass-panel rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all">
+             <LogOut size={16} />
         </Link>
       </header>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col items-center justify-center relative w-full max-w-md mx-auto overflow-hidden">
-        
-        <div className={`w-full h-full ${activeTab === "movies" ? "flex" : "hidden"}`}>
-            <SwipeGame />
-        </div>
-        
-        <div className={`w-full h-full ${activeTab === "mind" ? "flex" : "hidden"}`}>
-            {/* FIX: Conditionally render to ensure user exists before mounting */}
-            {user ? <MindMeld user={user} /> : <div className="flex items-center justify-center h-full text-zinc-500">Loading User...</div>}
-        </div>
-
-        <div className={`w-full h-full ${activeTab === "truth" ? "flex" : "hidden"}`}>
-             {/* FIX: Conditionally render */}
-             {user ? <TruthDare user={user} /> : <div className="flex items-center justify-center h-full text-zinc-500">Loading User...</div>}
-        </div>
-
-        <div className={`w-full h-full ${activeTab === "canvas" ? "flex" : "hidden"}`}>
-            <SharedCanvas />
-        </div>
-        
-        <div className={`w-full h-full ${activeTab === "memories" ? "flex" : "hidden"}`}>
-            <Memories />
-        </div>
-        
-        <div className={`w-full h-full ${activeTab === "daily" ? "flex" : "hidden"}`}>
-             {user ? <DailyPulse user={user} /> : <div className="flex items-center justify-center h-full text-zinc-500">Loading Daily...</div>}
-        </div>
-
+      {/* 2. MAIN CONTENT AREA (With Transitions) */}
+      <div className="flex-1 flex flex-col items-center justify-center relative w-full max-w-md mx-auto z-10 px-4 pb-28 pt-4">
+        <AnimatePresence mode="wait">
+            <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                transition={{ duration: 0.2 }}
+                className="w-full h-full flex flex-col items-center justify-center"
+            >
+                {activeTab === "movies" && <SwipeGame />}
+                {activeTab === "daily" && user && <DailyPulse user={user} />}
+                {activeTab === "truth" && user && <TruthDare user={user} />}
+                {activeTab === "canvas" && <SharedCanvas />}
+                {activeTab === "mind" && user && <MindMeld user={user} />}
+                {activeTab === "memories" && <Memories />}
+                {!user && activeTab !== "movies" && activeTab !== "canvas" && activeTab !== "memories" && (
+                    <div className="text-zinc-500 flex gap-2 items-center"><Loader2 className="animate-spin" size={16}/> Syncing Profile...</div>
+                )}
+            </motion.div>
+        </AnimatePresence>
       </div>
 
-      {/* Bottom Nav */}
-      <nav className="fixed bottom-0 w-full max-w-md left-1/2 -translate-x-1/2 p-4 bg-zinc-900/90 backdrop-blur-md border-t border-zinc-800 flex justify-around items-center z-50 pb-8 overflow-x-auto no-scrollbar">
-        <button onClick={() => setActiveTab("movies")} className={`flex flex-col items-center gap-1 min-w-[50px] ${activeTab === "movies" ? "text-purple-400" : "text-zinc-600"}`}>
-          <Film size={20} /><span className="text-[9px] uppercase">Movies</span>
-        </button>
-        <button onClick={() => setActiveTab("daily")} className={`flex flex-col items-center gap-1 min-w-[50px] ${activeTab === "daily" ? "text-purple-400" : "text-zinc-600"}`}>
-          <CalendarHeart size={20} /><span className="text-[9px] uppercase">Daily</span>
-        </button>
-        <button onClick={() => setActiveTab("truth")} className={`flex flex-col items-center gap-1 min-w-[50px] ${activeTab === "truth" ? "text-purple-400" : "text-zinc-600"}`}>
-          <Zap size={20} /><span className="text-[9px] uppercase">Play</span>
-        </button>
-        <button onClick={() => setActiveTab("canvas")} className={`flex flex-col items-center gap-1 min-w-[50px] ${activeTab === "canvas" ? "text-purple-400" : "text-zinc-600"}`}>
-          <Palette size={20} /><span className="text-[9px] uppercase">Canvas</span>
-        </button>
-        <button onClick={() => setActiveTab("memories")} className={`flex flex-col items-center gap-1 min-w-[50px] ${activeTab === "memories" ? "text-purple-400" : "text-zinc-600"}`}>
-          <BookHeart size={20} /><span className="text-[9px] uppercase">Memory</span>
-        </button>
-        <button onClick={() => setActiveTab("mind")} className={`flex flex-col items-center gap-1 min-w-[50px] ${activeTab === "mind" ? "text-purple-400" : "text-zinc-600"}`}>
-          <Brain size={20} /><span className="text-[9px] uppercase">Mind</span>
-        </button>
-      </nav>
+      {/* 3. FLOATING DOCK NAVIGATION */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[95%] max-w-[400px] z-50">
+        <div className="glass-panel rounded-2xl p-1.5 flex justify-between items-center shadow-2xl shadow-black/50 backdrop-blur-xl border-white/10">
+            {TABS.map((tab) => {
+                const isActive = activeTab === tab.id;
+                return (
+                    <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className="relative flex-1 flex flex-col items-center justify-center py-3 gap-1 group"
+                    >
+                        {isActive && (
+                            <motion.div 
+                                layoutId="active-pill"
+                                className="absolute inset-0 bg-white/10 rounded-xl"
+                                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                            />
+                        )}
+                        <span className={`relative z-10 transition-colors duration-300 ${isActive ? "text-white" : "text-zinc-500 group-hover:text-zinc-300"}`}>
+                            <tab.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
+                        </span>
+                    </button>
+                );
+            })}
+        </div>
+      </div>
     </main>
   );
 }

@@ -197,12 +197,29 @@ export default function DailyPulse({ user }: { user: any }) {
             )}
 
             {status === "waiting" && (
-                <motion.div key="wait" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-center p-8 bg-zinc-900/50 rounded-2xl border border-dashed border-zinc-800">
-                    <div className="w-12 h-12 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Lock size={20} className="text-zinc-500" />
+                <motion.div 
+                    key="wait" 
+                    initial={{ opacity: 0, scale: 0.95 }} 
+                    animate={{ opacity: 1, scale: 1 }} 
+                    exit={{ opacity: 0, scale: 0.95 }} 
+                    className="text-center py-12"
+             >
+                    {/* Breathing Lock Animation */}
+                    <div className="relative w-24 h-24 mx-auto mb-6">
+                        <motion.div 
+                        animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.1, 0.3] }} 
+                        transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                        className="absolute inset-0 bg-purple-500 rounded-full blur-xl"
+                        />
+                        <div className="relative w-full h-full bg-zinc-900 border border-zinc-700 rounded-full flex items-center justify-center z-10 shadow-xl">
+                            <Lock size={32} className="text-purple-400" />
+                        </div>
                     </div>
-                    <h3 className="text-white font-bold">Answer Locked</h3>
-                    <p className="text-zinc-500 text-sm mt-1">Waiting for your partner to answer...</p>
+        
+                    <h3 className="text-2xl font-bold text-white mb-2">Answer Locked</h3>
+                    <p className="text-zinc-400 text-sm max-w-[200px] mx-auto leading-relaxed">
+                        Your answer is safe. Waiting for your partner to sync up...
+                    </p>
                 </motion.div>
             )}
 

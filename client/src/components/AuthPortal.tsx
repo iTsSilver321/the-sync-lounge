@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, ArrowRight, User, LogIn, Heart } from "lucide-react";
+import { Sparkles, LogIn, Heart, Mail, Lock, KeyRound, ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 export default function AuthPortal() {
@@ -19,13 +19,8 @@ export default function AuthPortal() {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) alert(error.message);
     else {
-        // Check if user has a couple_id
         const { data: profile } = await supabase.from('profiles').select('couple_id').eq('id', data.user.id).single();
-        if (profile?.couple_id) {
-             router.push(`/room/${profile.couple_id}`); // Go to persistent room
-        } else {
-             router.push('/onboarding'); // Go to "Link Partner" screen
-        }
+        router.push(profile?.couple_id ? `/room/${profile.couple_id}` : '/onboarding');
     }
     setLoading(false);
   };
@@ -34,121 +29,90 @@ export default function AuthPortal() {
     setLoading(true);
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) alert(error.message);
-    else alert("Check your email for the confirmation link!");
+    else alert("Check your email!");
     setLoading(false);
   };
 
   const handleGuest = () => {
-     if (!guestCode) {
-        // Create random room
-        const code = Math.random().toString(36).substring(2, 6).toUpperCase();
-        router.push(`/room/${code}`);
-     } else {
-        router.push(`/room/${guestCode.toUpperCase()}`);
-     }
+     const code = guestCode ? guestCode.toUpperCase() : Math.random().toString(36).substring(2, 6).toUpperCase();
+     router.push(`/room/${code}`);
   };
 
+  // Smooth slide variants
   const variants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0 },
-    exit: { opacity: 0, y: -20 }
+    hidden: { opacity: 0, x: 20 },
+    visible: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: -20 }
   };
 
   return (
-    <div className="w-full max-w-md p-8 glass-panel rounded-3xl border border-white/10 shadow-2xl relative overflow-hidden">
-        {/* Background Decor */}
-        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-purple-500 via-pink-500 to-red-500" />
-
-        <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-200 to-pink-200 mb-2">
+    <div className="w-full max-w-md p-8 glass-panel rounded-[2rem] relative overflow-hidden">
+        {/* Glow Orb */}
+        <div className="absolute -top-20 -left-20 w-40 h-40 bg-purple-500/30 rounded-full blur-[80px]" />
+        
+        <div className="text-center mb-10 relative z-10">
+            <h1 className="text-5xl font-bold tracking-tighter text-white mb-2 drop-shadow-lg">
                 UsTime
             </h1>
-            <p className="text-zinc-400 text-sm">Your Digital Sanctuary</p>
+            <p className="text-zinc-400 text-sm font-medium tracking-wide uppercase">Digital Sanctuary for Two</p>
         </div>
 
+        <div className="min-h-[300px] relative z-10">
         <AnimatePresence mode="wait">
-            {/* 1. MAIN MENU */}
+            {/* MENU */}
             {view === "menu" && (
-                <motion.div 
-                    key="menu"
-                    variants={variants} initial="hidden" animate="visible" exit="exit"
-                    className="space-y-4"
-                >
-                    <button onClick={() => setView("login")} className="w-full py-4 bg-white/10 hover:bg-white/20 rounded-xl flex items-center justify-center gap-3 font-medium transition-all hover:scale-[1.02]">
-                        <LogIn size={20} /> Login to Account
+                <motion.div key="menu" variants={variants} initial="hidden" animate="visible" exit="exit" className="space-y-4">
+                    <button onClick={() => setView("login")} className="w-full group relative overflow-hidden p-4 rounded-2xl glass-input hover:bg-white/5 transition-all btn-bounce flex items-center gap-4">
+                        <div className="w-10 h-10 bg-zinc-800 rounded-full flex items-center justify-center group-hover:bg-zinc-700 transition-colors"><LogIn size={18} className="text-zinc-300" /></div>
+                        <div className="text-left"><p className="font-bold text-white">Sign In</p><p className="text-xs text-zinc-500">Continue your journey</p></div>
+                        <ArrowRight className="ml-auto text-zinc-600 group-hover:text-white transition-colors" size={16} />
                     </button>
-                    <button onClick={() => setView("register")} className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl flex items-center justify-center gap-3 font-bold shadow-lg shadow-purple-900/30 transition-all hover:scale-[1.02]">
-                        <Heart size={20} fill="currentColor" /> Create Couple Account
+
+                    <button onClick={() => setView("register")} className="w-full group p-4 rounded-2xl bg-gradient-to-r from-purple-600/20 to-pink-600/20 border border-purple-500/20 hover:border-purple-500/40 transition-all btn-bounce flex items-center gap-4">
+                        <div className="w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center"><Heart size={18} className="text-purple-300" /></div>
+                        <div className="text-left"><p className="font-bold text-white">New Couple</p><p className="text-xs text-purple-300/70">Create a shared space</p></div>
                     </button>
-                    <div className="relative flex items-center justify-center py-2">
-                        <div className="h-px bg-zinc-800 w-full"></div>
-                        <span className="absolute bg-black/50 px-2 text-xs text-zinc-500 uppercase">Quick Play</span>
+
+                    <div className="pt-4 flex justify-center">
+                        <button onClick={() => setView("guest")} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1">
+                            Just passing through? <span className="underline decoration-zinc-700">Guest Mode</span>
+                        </button>
                     </div>
-                    <button onClick={() => setView("guest")} className="w-full py-3 text-zinc-400 hover:text-white text-sm">
-                        Enter as Guest
-                    </button>
                 </motion.div>
             )}
 
-            {/* 2. LOGIN / REGISTER FORM */}
+            {/* LOGIN / REGISTER */}
             {(view === "login" || view === "register") && (
-                <motion.div 
-                    key="auth"
-                    variants={variants} initial="hidden" animate="visible" exit="exit"
-                    className="space-y-4"
-                >
-                    <input 
-                        type="email" placeholder="Email" 
-                        className="w-full bg-black/30 border border-zinc-700 p-4 rounded-xl text-white focus:outline-none focus:border-purple-500 transition-colors"
-                        value={email} onChange={(e) => setEmail(e.target.value)}
-                    />
-                    <input 
-                        type="password" placeholder="Password" 
-                        className="w-full bg-black/30 border border-zinc-700 p-4 rounded-xl text-white focus:outline-none focus:border-purple-500 transition-colors"
-                        value={password} onChange={(e) => setPassword(e.target.value)}
-                    />
+                <motion.div key="auth" variants={variants} initial="hidden" animate="visible" exit="exit" className="space-y-5">
+                    <div className="relative">
+                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+                        <input type="email" placeholder="hello@you.com" className="w-full glass-input p-4 pl-12 rounded-xl text-sm" value={email} onChange={(e) => setEmail(e.target.value)} />
+                    </div>
+                    <div className="relative">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+                        <input type="password" placeholder="••••••••" className="w-full glass-input p-4 pl-12 rounded-xl text-sm" value={password} onChange={(e) => setPassword(e.target.value)} />
+                    </div>
                     
-                    <button 
-                        onClick={view === "login" ? handleLogin : handleSignUp}
-                        disabled={loading}
-                        className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-bold flex items-center justify-center gap-2"
-                    >
-                        {loading ? <Sparkles className="animate-spin" /> : (view === "login" ? "Enter Lounge" : "Start Journey")}
+                    <button onClick={view === "login" ? handleLogin : handleSignUp} disabled={loading} className="w-full py-4 mt-2 bg-white text-black rounded-xl font-bold btn-bounce shadow-lg shadow-white/10 disabled:opacity-50 flex justify-center items-center gap-2">
+                        {loading ? <Sparkles size={18} className="animate-spin" /> : (view === "login" ? "Unlock Space" : "Begin Together")}
                     </button>
-
-                    <button onClick={() => setView("menu")} className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300">
-                        ← Back
-                    </button>
+                    <button onClick={() => setView("menu")} className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 pt-2">Cancel</button>
                 </motion.div>
             )}
 
-            {/* 3. GUEST MODE */}
+            {/* GUEST */}
             {view === "guest" && (
-                <motion.div 
-                    key="guest"
-                    variants={variants} initial="hidden" animate="visible" exit="exit"
-                    className="space-y-4"
-                >
-                    <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-yellow-200 text-xs text-center">
-                        ⚠️ Guest memories are lost when you close the tab.
+                <motion.div key="guest" variants={variants} initial="hidden" animate="visible" exit="exit" className="space-y-6 text-center">
+                    <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto border border-white/10"><KeyRound size={24} className="text-zinc-400" /></div>
+                    <div className="relative">
+                        <input type="text" placeholder="ROOM CODE (OPTIONAL)" maxLength={6} className="w-full glass-input p-4 rounded-xl text-center font-mono tracking-[0.3em] uppercase placeholder:tracking-normal placeholder:font-sans" value={guestCode} onChange={(e) => setGuestCode(e.target.value)} />
                     </div>
-                    <input 
-                        type="text" placeholder="Room Code (Optional)" 
-                        className="w-full bg-black/30 border border-zinc-700 p-4 rounded-xl text-white text-center uppercase tracking-widest"
-                        value={guestCode} onChange={(e) => setGuestCode(e.target.value)}
-                    />
-                    <button 
-                        onClick={handleGuest}
-                        className="w-full py-4 bg-white text-black font-bold rounded-xl hover:scale-[1.02] transition-transform"
-                    >
-                        {guestCode ? "Join Room" : "Create Instant Room"}
-                    </button>
-                    <button onClick={() => setView("menu")} className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300">
-                        ← Back
-                    </button>
+                    <button onClick={handleGuest} className="w-full py-4 bg-white text-black rounded-xl font-bold btn-bounce">{guestCode ? "Join Room" : "Create Instant Room"}</button>
+                    <button onClick={() => setView("menu")} className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300">Cancel</button>
                 </motion.div>
             )}
         </AnimatePresence>
+        </div>
     </div>
   );
 }

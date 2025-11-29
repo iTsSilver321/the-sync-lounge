@@ -8,7 +8,7 @@ import { useParams } from "next/navigation";
 import { fetchMovies } from "@/app/actions"; 
 import { Loader2 } from "lucide-react"; 
 import { useGameSounds } from "@/hooks/useGameSounds";
-import { socket } from "@/lib/socket"; // <--- CRITICAL FIX: Use shared socket
+import { socket } from "@/lib/socket"; 
 import { supabase } from "@/lib/supabase";
 
 interface Movie {
@@ -28,14 +28,26 @@ export default function SwipeGame() {
   const [match, setMatch] = useState<{ title: string; poster: string } | null>(null);
   const [loading, setLoading] = useState(false);
   
-  const [page, setPage] = useState(1);
+  // Start as NULL
+  const [page, setPage] = useState<number | null>(null);
+  
   const isFetching = useRef(false);
   const movieCache = useRef<Map<number, Movie>>(new Map());
 
-  // 1. SETUP SOCKET LISTENERS
+  // 1. CALCULATE PAGE & SETUP SOCKET
   useEffect(() => {
+    // --- THE MATH TRICK ---
+    // Turn the Room ID (e.g. "A7X2") into a number (e.g. 14)
+    // This ensures both users get the same "random" page instantly.
+    const seed = roomId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const calculatedPage = (seed % 20) + 1; // Result is always 1-20
+    
+    console.log(`Room ${roomId} maps to Page ${calculatedPage}`);
+    setPage(calculatedPage);
+
+    // Socket Connection
     if (!socket.connected) socket.connect();
-    socket.emit("join_room", roomId); // Ensure we are in the room
+    socket.emit("join_room", roomId);
 
     const handleMatch = async (data: any) => {
       playMatch();
@@ -62,19 +74,23 @@ export default function SwipeGame() {
     return () => {
       socket.off("movie:match_found", handleMatch);
     };
-  }, []);
+  }, []); // Run ONCE
 
-  // 2. INITIAL FETCH
+  // 2. FETCH MOVIES
   useEffect(() => {
-    loadMovies(1);
-  }, []);
+    // Only fetch if we have a page number
+    if (page !== null) {
+      loadNewMovies(page);
+    }
+  }, [page]); 
 
-  const loadMovies = async (pageToFetch: number) => {
+  const loadNewMovies = async (pageToFetch: number) => {
     if (isFetching.current) return;
     isFetching.current = true;
     setLoading(true);
 
     try {
+      console.log("Fetching TMDB Page:", pageToFetch);
       const newMovies = await fetchMovies(pageToFetch);
       
       setCards((prev) => {
@@ -93,24 +109,20 @@ export default function SwipeGame() {
 
   const handleSwipe = (id: number, direction: "left" | "right") => {
     setCards((prev) => prev.filter((card) => card.id !== id));
-    
-    // Emit on the SHARED socket
-    if (direction === "right") {
-       socket.emit("movie:swipe", { movieId: id, direction });
-    }
+    if (socket) socket.emit("movie:swipe", { movieId: id, direction });
 
-    if (cards.length < 3 && !isFetching.current) {
-      const nextPage = page + 1;
-      setPage(nextPage);
-      loadMovies(nextPage);
+    // Infinite Scroll
+    if (cards.length < 3 && !isFetching.current && page !== null) {
+      setPage(prev => (prev ? prev + 1 : prev));
     }
   };
 
-  if (loading && cards.length === 0) {
+  // LOADING STATE
+  if ((loading && cards.length === 0) || page === null) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-purple-400">
         <Loader2 className="w-10 h-10 animate-spin mb-4" />
-        <p className="text-zinc-400 animate-pulse">Loading Cinema...</p>
+        <p className="text-zinc-400 animate-pulse">Syncing Cinema...</p>
       </div>
     );
   }
@@ -139,9 +151,18 @@ export default function SwipeGame() {
       </AnimatePresence>
       
       {cards.length === 0 && !loading && (
-        <div className="text-center p-8 glass-panel rounded-3xl animate-in fade-in">
-             <h3 className="text-2xl font-bold mb-2">That's a Wrap! 🎬</h3>
-             <button onClick={() => window.location.reload()} className="px-6 py-3 bg-white/10 hover:bg-white/20 rounded-full font-medium">Refresh</button>
+        <div className="glass-panel p-8 rounded-3xl text-center max-w-xs animate-in zoom-in duration-300">
+            <div className="w-16 h-16 mx-auto bg-white/10 rounded-full flex items-center justify-center mb-4">
+                <span className="text-3xl">🎬</span>
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2">That's a Wrap!</h3>
+            <p className="text-zinc-400 text-sm mb-6">You've seen all the movies for this session.</p>
+            <button 
+                onClick={() => window.location.reload()} 
+                className="w-full py-3 bg-white text-black font-bold rounded-xl hover:scale-105 transition-transform"
+            >
+                Load More Movies
+            </button>
         </div>
       )}
     </div>
