@@ -1,15 +1,15 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { connectSocket, socket } from "@/lib/socket";
+import { socket } from "@/lib/socket";
 import { supabase } from "@/lib/supabase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Flame, Snowflake, PartyPopper } from "lucide-react";
 import { useGameSounds } from "@/hooks/useGameSounds";
 import { useParams } from "next/navigation";
 
-// FIX: Accept the user prop here
-export default function TruthDare({ user }: { user?: any }) {
+// Update Props to accept partnerProfile
+export default function TruthDare({ user, partnerProfile }: { user?: any, partnerProfile?: any }) {
   const { playPop, playMatch } = useGameSounds();
   const params = useParams();
   const roomId = params.id as string;
@@ -23,7 +23,7 @@ export default function TruthDare({ user }: { user?: any }) {
   const iRequestedIt = useRef(false); 
 
   useEffect(() => {
-    connectSocket();
+    if (!socket.connected) socket.connect();
     socket.emit("join_room", roomId);
 
     socket.on("truth:new_challenge", async (data) => {
@@ -38,7 +38,7 @@ export default function TruthDare({ user }: { user?: any }) {
           await supabase.from('history').insert({
               room_id: roomId,
               category: data.type.toLowerCase(),
-              user_id: user?.id || null, // Use the passed user ID
+              user_id: user?.id || null, 
               content: { 
                   text: data.text, 
                   intensity: intensity 
@@ -51,7 +51,7 @@ export default function TruthDare({ user }: { user?: any }) {
     return () => {
       socket.off("truth:new_challenge");
     };
-  }, [intensity, roomId, user]); // Add user to dependency
+  }, [intensity, roomId, user]);
 
   const handleGenerate = (type: "truth" | "dare") => {
     if (isButtonLocked.current) return;

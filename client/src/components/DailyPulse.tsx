@@ -2,19 +2,19 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { connectSocket, socket } from "@/lib/socket";
+import { socket } from "@/lib/socket";
 import { motion, AnimatePresence } from "framer-motion";
 import { Flame, Send, Loader2, CheckCircle, Lock } from "lucide-react";
 import { useGameSounds } from "@/hooks/useGameSounds";
 import { useParams } from "next/navigation"; 
 
-export default function DailyPulse({ user }: { user: any }) {
+// Update Props to accept partnerProfile
+export default function DailyPulse({ user, partnerProfile }: { user: any, partnerProfile?: any }) {
   const { playMatch, playPop } = useGameSounds();
   const params = useParams();
   const roomId = params.id as string;
 
   const [loading, setLoading] = useState(true);
-  // We track status in a ref too, so socket listeners can see the 'current' real value
   const [status, setStatus] = useState<"loading" | "answering" | "waiting" | "complete">("loading");
   const statusRef = useRef(status); 
 
@@ -26,29 +26,25 @@ export default function DailyPulse({ user }: { user: any }) {
   const coupleIdRef = useRef<string | null>(null);
   const today = new Date().toISOString().split('T')[0];
 
-  // Keep ref in sync with state
+  // Identity Helpers
+  const partnerName = partnerProfile?.display_name || "Partner";
+  const partnerColor = partnerProfile?.aura_color || "#EC4899";
+
   useEffect(() => { statusRef.current = status; }, [status]);
 
   useEffect(() => {
-    connectSocket();
+    if (!socket.connected) socket.connect();
     socket.emit("join_room", roomId);
 
     fetchDaily();
 
-    // 1. Handle New Question
     const handleNewQuestion = (text: string) => {
-        console.log("Received Question:", text);
         setQuestion(text);
-        
-        // FIX: Only reset to "answering" if we are currently loading
-        // This prevents the double-generation from wiping your progress!
         if (statusRef.current === "loading") {
             setStatus("answering");
         }
-        
         setLoading(false);
 
-        // Save question if needed (Creator only)
         if (coupleIdRef.current) {
              supabase.from('daily_sync').upsert({
                 couple_id: coupleIdRef.current,
@@ -58,9 +54,7 @@ export default function DailyPulse({ user }: { user: any }) {
         }
     };
 
-    // 2. Handle Partner Update
     const handlePartnerSubmit = () => {
-        console.log("Partner submitted! Refreshing...");
         fetchDaily();
     };
 
@@ -91,7 +85,6 @@ export default function DailyPulse({ user }: { user: any }) {
 
     if (!daily) {
         if (statusRef.current === "loading") {
-             console.log("Requesting daily...");
              socket.emit("daily:generate");
         }
     } else {
@@ -100,11 +93,9 @@ export default function DailyPulse({ user }: { user: any }) {
         const isUserA = daily.user_a === user.id;
         const isUserB = daily.user_b === user.id;
         
-        // Check Answers
         const answerA = daily.answer_a;
         const answerB = daily.answer_b;
         
-        // My Answer is...
         const mine = isUserA ? answerA : (isUserB ? answerB : null);
         const theirs = isUserA ? answerB : answerA;
 
@@ -127,7 +118,6 @@ export default function DailyPulse({ user }: { user: any }) {
     playPop();
     setLoading(true);
     
-    // USE RPC FUNCTION (Atomic Save)
     const { data, error } = await supabase.rpc('submit_daily_answer', {
         p_couple_id: coupleIdRef.current,
         p_date: today,
@@ -136,27 +126,23 @@ export default function DailyPulse({ user }: { user: any }) {
     });
 
     if (error) {
-        console.error("Submit failed:", error);
         setLoading(false);
         return;
     }
 
     socket.emit("daily:submit");
     
-    // Update UI based on return from DB
     const isComplete = data.answer_a && data.answer_b;
     
     if (isComplete) { 
         setStatus("complete");
         playMatch();
         
-        // Increment Streak (Client side check to avoid double increment)
         if (statusRef.current !== 'complete') {
             await supabase.from('profiles').update({ streak_count: streak + 1 }).eq('couple_id', coupleIdRef.current);
             setStreak(s => s + 1);
         }
 
-        // Show partner answer
         const amIA = data.user_a === user.id;
         setPartnerAnswer(amIA ? data.answer_b : data.answer_a);
     } else {
@@ -209,16 +195,17 @@ export default function DailyPulse({ user }: { user: any }) {
                         <motion.div 
                         animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.1, 0.3] }} 
                         transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-                        className="absolute inset-0 bg-purple-500 rounded-full blur-xl"
+                        className="absolute inset-0 rounded-full blur-xl"
+                        style={{ backgroundColor: partnerColor }}
                         />
                         <div className="relative w-full h-full bg-zinc-900 border border-zinc-700 rounded-full flex items-center justify-center z-10 shadow-xl">
-                            <Lock size={32} className="text-purple-400" />
+                            <Lock size={32} style={{ color: partnerColor }} />
                         </div>
                     </div>
         
                     <h3 className="text-2xl font-bold text-white mb-2">Answer Locked</h3>
                     <p className="text-zinc-400 text-sm max-w-[200px] mx-auto leading-relaxed">
-                        Your answer is safe. Waiting for your partner to sync up...
+                        Your answer is safe. Waiting for {partnerName} to sync up...
                     </p>
                 </motion.div>
             )}
@@ -229,8 +216,14 @@ export default function DailyPulse({ user }: { user: any }) {
                         <p className="text-xs text-purple-300 mb-2 font-bold">YOU</p>
                         <p className="text-white">{myAnswer}</p>
                     </div>
-                    <div className="bg-zinc-800/40 p-6 rounded-2xl border border-white/5">
-                        <p className="text-xs text-zinc-400 mb-2 font-bold">PARTNER</p>
+                    <div className="bg-zinc-800/40 p-6 rounded-2xl border border-white/5 relative overflow-hidden">
+                        <div className="absolute left-0 top-0 w-1 h-full" style={{ backgroundColor: partnerColor }} />
+                        <div className="flex items-center gap-2 mb-2">
+                            {partnerProfile?.avatar_url && (
+                                <img src={partnerProfile.avatar_url} className="w-5 h-5 rounded-full object-cover" />
+                            )}
+                            <p className="text-xs text-zinc-400 font-bold uppercase">{partnerName}</p>
+                        </div>
                         <p className="text-zinc-200">{partnerAnswer}</p>
                     </div>
                     <div className="text-center py-4">

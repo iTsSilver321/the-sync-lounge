@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { connectSocket, socket } from "@/lib/socket";
+import { socket } from "@/lib/socket";
 import { Trash2, Undo2, Eraser, PenLine, AlertTriangle } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useGameSounds } from "@/hooks/useGameSounds";
 import { motion, AnimatePresence } from "framer-motion";
 
-export default function SharedCanvas() {
+// Added Props
+export default function SharedCanvas({ partnerProfile }: { partnerProfile?: any }) {
   const { playPop } = useGameSounds();
   const params = useParams();
   const roomId = params.id as string;
@@ -15,19 +16,21 @@ export default function SharedCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  // Local cache of drawing history
   const historyRef = useRef<any[]>([]);
   
   const [color, setColor] = useState("#A855F7");
   const [isEraser, setIsEraser] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   
+  // LIVE PARTNER CURSOR STATE
+  const [partnerPos, setPartnerPos] = useState<{ x: number, y: number } | null>(null);
+  const partnerTimeout = useRef<NodeJS.Timeout | null>(null);
+
   const isDrawing = useRef(false);
   const prevPoint = useRef<{ x: number; y: number } | null>(null);
   const currentStrokeId = useRef<string | null>(null);
 
   // --- DRAWING HELPERS ---
-
   const drawLine = (ctx: CanvasRenderingContext2D, data: any) => {
     ctx.strokeStyle = data.color;
     ctx.lineWidth = data.color === "#18181b" ? 12 : 4; 
@@ -44,29 +47,29 @@ export default function SharedCanvas() {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    historyRef.current.forEach((stroke) => {
-        drawLine(ctx, stroke);
-    });
+    historyRef.current.forEach((stroke) => drawLine(ctx, stroke));
   };
 
   // --- 1. SOCKET & SYNC ---
-
   useEffect(() => {
-    connectSocket();
-
-    // Trigger history fetch (Server fix allows this to work on re-visit)
+    if (!socket.connected) socket.connect();
     socket.emit("join_room", roomId);
 
     const handleRemoteDraw = (data: any) => {
       historyRef.current.push(data);
       const ctx = canvasRef.current?.getContext("2d");
       if (ctx) drawLine(ctx, data);
+
+      // UPDATE CURSOR POSITION
+      setPartnerPos({ x: data.x, y: data.y });
+      
+      // Hide cursor after 2 seconds of inactivity
+      if (partnerTimeout.current) clearTimeout(partnerTimeout.current);
+      partnerTimeout.current = setTimeout(() => setPartnerPos(null), 2000);
     };
 
     const handleHistory = (serverHistory: any[]) => {
-      // console.log("🎨 History Loaded:", serverHistory.length);
       historyRef.current = serverHistory;
       repaintCanvas();
     };
@@ -87,12 +90,10 @@ export default function SharedCanvas() {
     };
   }, [roomId]);
 
-  // --- 2. RESPONSIVE RESIZE ---
-
+  // --- 2. RESIZE LOGIC (Same as before) ---
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-
     const resizeObserver = new ResizeObserver(() => {
       const canvas = canvasRef.current;
       if (canvas && container.offsetWidth > 0) {
@@ -101,13 +102,11 @@ export default function SharedCanvas() {
         repaintCanvas(); 
       }
     });
-
     resizeObserver.observe(container);
     return () => resizeObserver.disconnect();
   }, []); 
 
-  // --- 3. INPUT HANDLERS ---
-
+  // --- 3. INPUT HANDLERS (Same as before) ---
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     isDrawing.current = true;
     currentStrokeId.current = `${socket.id}-${Date.now()}`;
@@ -119,7 +118,6 @@ export default function SharedCanvas() {
     if (!isDrawing.current || !prevPoint.current) return;
     const { x, y } = getCoords(e);
     const ctx = canvasRef.current?.getContext("2d");
-    
     if (ctx) {
       const activeColor = isEraser ? "#18181b" : color;
       const strokeData = {
@@ -128,7 +126,6 @@ export default function SharedCanvas() {
         strokeId: currentStrokeId.current,
         userId: socket.id
       };
-
       drawLine(ctx, strokeData);
       historyRef.current.push(strokeData);
       socket.emit("canvas:draw", strokeData);
@@ -174,7 +171,40 @@ export default function SharedCanvas() {
         className="bg-zinc-900 rounded-3xl touch-none cursor-crosshair shadow-inner"
       />
 
-      {/* Floating Palette */}
+      {/* PARTNER LIVE CURSOR (The Juice) */}
+      <AnimatePresence>
+        {partnerPos && (
+            <motion.div
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ 
+                    opacity: 1, 
+                    scale: 1, 
+                    left: partnerPos.x, 
+                    top: partnerPos.y - 40 // Float above the pen
+                }}
+                exit={{ opacity: 0, scale: 0.5 }}
+                transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                className="absolute pointer-events-none z-30 flex flex-col items-center"
+            >
+                <div 
+                    className="px-3 py-1 rounded-full text-[10px] font-bold text-white shadow-lg flex items-center gap-2"
+                    style={{ backgroundColor: partnerProfile?.aura_color || "#A855F7" }}
+                >
+                    {partnerProfile?.avatar_url && (
+                        <img src={partnerProfile.avatar_url} className="w-4 h-4 rounded-full border border-white/20" />
+                    )}
+                    {partnerProfile?.display_name || "Partner"}
+                </div>
+                {/* Little triangle pointing down */}
+                <div 
+                    className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px]"
+                    style={{ borderTopColor: partnerProfile?.aura_color || "#A855F7" }}
+                />
+            </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Palette (Same as before) */}
       <motion.div 
         initial={{ y: 50, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -204,7 +234,7 @@ export default function SharedCanvas() {
          </div>
       </motion.div>
 
-      {/* Custom Confirmation Modal */}
+      {/* Confirmation Modal (Same as before) */}
       <AnimatePresence>
         {showClearConfirm && (
             <motion.div 
@@ -224,20 +254,9 @@ export default function SharedCanvas() {
                     </div>
                     <h3 className="text-white font-bold text-lg mb-2">Clear Canvas?</h3>
                     <p className="text-zinc-400 text-sm mb-6">This will wipe the entire board for both of you.</p>
-                    
                     <div className="flex gap-3">
-                        <button 
-                            onClick={() => setShowClearConfirm(false)} 
-                            className="flex-1 py-3 bg-zinc-700 hover:bg-zinc-600 rounded-xl font-medium text-white transition-colors"
-                        >
-                            Cancel
-                        </button>
-                        <button 
-                            onClick={confirmClear} 
-                            className="flex-1 py-3 bg-red-500 hover:bg-red-600 rounded-xl font-bold text-white transition-colors"
-                        >
-                            Wipe It
-                        </button>
+                        <button onClick={() => setShowClearConfirm(false)} className="flex-1 py-3 bg-zinc-700 hover:bg-zinc-600 rounded-xl font-medium text-white transition-colors">Cancel</button>
+                        <button onClick={confirmClear} className="flex-1 py-3 bg-red-500 hover:bg-red-600 rounded-xl font-bold text-white transition-colors">Wipe It</button>
                     </div>
                 </motion.div>
             </motion.div>
