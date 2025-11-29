@@ -1,17 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
-import Link from "next/link";
-import { motion, AnimatePresence, useAnimation } from "framer-motion";
-import { Film, Brain, Palette, BookHeart, Zap, CalendarHeart, LogOut, Loader2, Heart, User, Settings } from "lucide-react";
-
-// Hooks & Libs
-import { supabase } from "@/lib/supabase";
-import { socket, connectSocket } from "@/lib/socket";
-import { useGameSounds } from "@/hooks/useGameSounds";
-
-// Components
+import { useParams, useRouter } from "next/navigation"; // Added useRouter
 import SwipeGame from "@/components/SwipeGame";
 import MindMeld from "@/components/MindMeld";
 import SharedCanvas from "@/components/SharedCanvas";
@@ -20,6 +10,11 @@ import TruthDare from "@/components/TruthDare";
 import DailyPulse from "@/components/DailyPulse";
 import ProfileLab from "@/components/ProfileLab";
 import ProfileCard from "@/components/ProfileCard";
+import { supabase } from "@/lib/supabase";
+import { motion, AnimatePresence, useAnimation } from "framer-motion";
+import { Film, Brain, Palette, BookHeart, Zap, CalendarHeart, LogOut, Loader2, Heart, User, Settings } from "lucide-react";
+import { useGameSounds } from "@/hooks/useGameSounds";
+import { socket, connectSocket } from "@/lib/socket";
 
 const TABS = [
   { id: "movies", icon: Film, label: "Cinema" },
@@ -33,6 +28,7 @@ const TABS = [
 export default function GameRoom() {
   const { playMatch } = useGameSounds(); 
   const params = useParams();
+  const router = useRouter(); // Initialize Router
   const roomId = params.id as string;
   
   // State
@@ -99,6 +95,18 @@ export default function GameRoom() {
       heartControls.start({ scale: [1, 0.8, 1.2, 1], transition: { duration: 0.3 } });
   };
 
+  // --- NEW LOGOUT HANDLER ---
+  const handleLogout = async () => {
+      // 1. Disconnect Socket
+      if (socket.connected) socket.disconnect();
+      
+      // 2. Clear Session
+      await supabase.auth.signOut();
+      
+      // 3. Go Home
+      router.push("/");
+  };
+
   // Determine Theme Color based on My Aura (Default Purple)
   const themeColor = myProfile?.aura_color || "#A855F7";
 
@@ -154,49 +162,66 @@ export default function GameRoom() {
             <button onClick={() => setShowProfileLab(true)} className="w-10 h-10 glass-panel rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all">
                 <Settings size={16} />
             </button>
-            <Link href="/" className="w-10 h-10 glass-panel rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all">
+            {/* CHANGED: Replaced Link with Button */}
+            <button onClick={handleLogout} className="w-10 h-10 glass-panel rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all">
                 <LogOut size={16} />
-            </Link>
+            </button>
         </div>
       </header>
 
       {/* CONTENT AREA */}
-        <div className="flex-1 flex flex-col items-center justify-center relative w-full max-w-md mx-auto z-10 px-4 pb-28 pt-4">
-            <AnimatePresence mode="wait">
-                <motion.div
-                   key={activeTab}
-                   initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                   exit={{ opacity: 0, y: -10, scale: 0.98 }}
-                   transition={{ duration: 0.2 }}
-                   className="w-full h-full flex flex-col items-center justify-center"
-                  >
-                      {activeTab === "movies" && <SwipeGame />}
-          
-                     {activeTab === "daily" && user && (
-                         <DailyPulse user={user} partnerProfile={partnerProfile} /> // Pass Partner
-                      )}
-          
-                     {activeTab === "truth" && user && (
-                          <TruthDare user={user} partnerProfile={partnerProfile} /> // Pass Partner
-                      )}
-          
-                     {activeTab === "canvas" && (
-                       <SharedCanvas partnerProfile={partnerProfile} /> // Pass Partner
-                      )}
-          
-                      {activeTab === "mind" && user && (
-                          <MindMeld user={user} partnerProfile={partnerProfile} /> // Pass Partner
-                     )}
-          
-                     {activeTab === "memories" && <Memories />}
-          
-                    {!user && activeTab !== "movies" && activeTab !== "canvas" && activeTab !== "memories" && (
-                        <div className="text-zinc-500 flex gap-2 items-center"><Loader2 className="animate-spin" size={16}/> Syncing Profile...</div>
-                    )}
-                </motion.div>
-            </AnimatePresence>
-        </div>
+      <div className="flex-1 flex flex-col items-center justify-center relative w-full max-w-md mx-auto z-10 px-4 pb-28 pt-4">
+        <AnimatePresence mode="wait">
+            <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                transition={{ duration: 0.2 }}
+                className="w-full h-full flex flex-col items-center justify-center"
+            >
+                {activeTab === "movies" && <SwipeGame />}
+                
+                {activeTab === "daily" && user && (
+                    <DailyPulse user={user} partnerProfile={partnerProfile} /> 
+                )}
+                
+                {activeTab === "truth" && user && (
+                    <TruthDare user={user} partnerProfile={partnerProfile} /> 
+                )}
+                
+                {activeTab === "canvas" && (
+                    <SharedCanvas partnerProfile={partnerProfile} /> 
+                )}
+                
+                {activeTab === "mind" && user && (
+                    <MindMeld user={user} partnerProfile={partnerProfile} /> 
+                )}
+                
+                {activeTab === "memories" && <Memories />}
+                
+                {/* Fallback Loading */}
+                {!user && activeTab !== "movies" && activeTab !== "canvas" && activeTab !== "memories" && (
+                    <div className="text-zinc-500 flex gap-2 items-center"><Loader2 className="animate-spin" size={16}/> Syncing Profile...</div>
+                )}
+            </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* HEARTBEAT (Using Gradient of Both Auras) */}
+      <div className="fixed bottom-24 right-6 z-50">
+          <motion.button
+            animate={heartControls}
+            onClick={sendHeartbeat}
+            className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg border border-white/20 active:scale-90 transition-transform"
+            style={{ 
+                background: `linear-gradient(135deg, ${themeColor}, ${partnerProfile?.aura_color || "#EC4899"})`,
+                boxShadow: `0 10px 30px -10px ${themeColor}80`
+            }}
+          >
+              <Heart fill="white" size={24} className="text-white" />
+          </motion.button>
+      </div>
 
       {/* DOCK */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[95%] max-w-[400px] z-50">

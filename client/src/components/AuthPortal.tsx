@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, LogIn, Heart, Mail, Lock, KeyRound, ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
@@ -14,10 +14,49 @@ export default function AuthPortal() {
   const [loading, setLoading] = useState(false);
   const [guestCode, setGuestCode] = useState("");
   
-  // Custom Error/Success State
   const [message, setMessage] = useState<{ type: 'error' | 'success', text: string } | null>(null);
 
   const clearMessage = () => setMessage(null);
+
+  // --- NEW: AUTO-REDIRECT LOGIC ---
+  useEffect(() => {
+    // 1. Check if user is ALREADY logged in (or just came back from Google)
+    const checkSession = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+            handleUserRedirect(session.user.id);
+        }
+    };
+    checkSession();
+
+    // 2. Listen for Auth Changes (e.g. Google Login completing)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' && session?.user) {
+            handleUserRedirect(session.user.id);
+        }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Helper to find where to send the user
+  const handleUserRedirect = async (userId: string) => {
+      setLoading(true);
+      // Fetch profile to see if they have a room
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('couple_id')
+        .eq('id', userId)
+        .single();
+      
+      if (profile?.couple_id) {
+          router.push(`/room/${profile.couple_id}`);
+      } else {
+          router.push('/onboarding');
+      }
+      // Note: We don't set loading false here because we are navigating away
+  };
+  // --------------------------------
 
   const handleLogin = async () => {
     setLoading(true);
@@ -25,11 +64,9 @@ export default function AuthPortal() {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
         setMessage({ type: 'error', text: error.message });
-    } else {
-        const { data: profile } = await supabase.from('profiles').select('couple_id').eq('id', data.user.id).single();
-        router.push(profile?.couple_id ? `/room/${profile.couple_id}` : '/onboarding');
-    }
-    setLoading(false);
+        setLoading(false);
+    } 
+    // If success, the onAuthStateChange listener above will handle the redirect
   };
 
   const handleSignUp = async () => {
@@ -44,6 +81,24 @@ export default function AuthPortal() {
     setLoading(false);
   };
 
+  const handleGoogleLogin = async () => {
+      setLoading(true);
+      const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+              redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+              queryParams: {
+                  access_type: 'offline',
+                  prompt: 'consent',
+              },
+          },
+      });
+      if (error) {
+          setMessage({ type: 'error', text: error.message });
+          setLoading(false);
+      }
+  };
+
   const handleGuest = () => {
      const code = guestCode ? guestCode.toUpperCase() : Math.random().toString(36).substring(2, 6).toUpperCase();
      router.push(`/room/${code}`);
@@ -56,14 +111,14 @@ export default function AuthPortal() {
   };
 
   return (
-    <div className="w-full max-w-md p-8 glass-panel rounded-[2rem] relative overflow-hidden">
-        <div className="absolute -top-20 -left-20 w-40 h-40 bg-purple-500/30 rounded-full blur-[80px]" />
+    <div className="w-full max-w-md p-8 glass-panel rounded-[2rem] relative overflow-hidden shadow-2xl backdrop-blur-xl border border-white/10 bg-black/40">
         
-        <div className="text-center mb-10 relative z-10">
-            <h1 className="text-5xl font-bold tracking-tighter text-white mb-2 drop-shadow-lg">
+        {/* Header */}
+        <div className="text-center mb-8 relative z-10">
+            <h1 className="text-5xl font-bold tracking-tighter text-white mb-2 drop-shadow-xl bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60">
                 UsTime
             </h1>
-            <p className="text-zinc-400 text-sm font-medium tracking-wide uppercase">Digital Sanctuary for Two</p>
+            <p className="text-purple-200/60 text-xs font-medium tracking-[0.2em] uppercase">Digital Sanctuary for Two</p>
         </div>
 
         <div className="min-h-[300px] relative z-10">
@@ -71,6 +126,23 @@ export default function AuthPortal() {
             {/* MENU */}
             {view === "menu" && (
                 <motion.div key="menu" variants={variants} initial="hidden" animate="visible" exit="exit" className="space-y-4">
+                    
+                    {/* Google Button */}
+                    <button 
+                        onClick={handleGoogleLogin} 
+                        disabled={loading}
+                        className="w-full p-4 rounded-2xl bg-white text-black font-bold flex items-center justify-center gap-3 hover:scale-[1.02] active:scale-[0.98] transition-transform shadow-lg disabled:opacity-70"
+                    >
+                        {loading ? <Loader2 className="animate-spin" size={20} /> : <GoogleIcon />}
+                        <span>{loading ? "Connecting..." : "Continue with Google"}</span>
+                    </button>
+
+                    <div className="flex items-center gap-4 px-2">
+                        <div className="h-px bg-white/10 flex-1" />
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">or email</span>
+                        <div className="h-px bg-white/10 flex-1" />
+                    </div>
+
                     <button onClick={() => { setView("login"); clearMessage(); }} className="w-full group relative overflow-hidden p-4 rounded-2xl glass-input hover:bg-white/5 transition-all btn-bounce flex items-center gap-4">
                         <div className="w-10 h-10 bg-zinc-800 rounded-full flex items-center justify-center group-hover:bg-zinc-700 transition-colors"><LogIn size={18} className="text-zinc-300" /></div>
                         <div className="text-left"><p className="font-bold text-white">Sign In</p><p className="text-xs text-zinc-500">Continue your journey</p></div>
@@ -82,7 +154,7 @@ export default function AuthPortal() {
                         <div className="text-left"><p className="font-bold text-white">New Couple</p><p className="text-xs text-purple-300/70">Create a shared space</p></div>
                     </button>
 
-                    <div className="pt-4 flex justify-center">
+                    <div className="pt-2 flex justify-center">
                         <button onClick={() => { setView("guest"); clearMessage(); }} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1">
                             Just passing through? <span className="underline decoration-zinc-700">Guest Mode</span>
                         </button>
@@ -94,7 +166,6 @@ export default function AuthPortal() {
             {(view === "login" || view === "register") && (
                 <motion.div key="auth" variants={variants} initial="hidden" animate="visible" exit="exit" className="space-y-5">
                     
-                    {/* Inline Notification */}
                     <AnimatePresence>
                         {message && (
                             <motion.div 
@@ -140,4 +211,18 @@ export default function AuthPortal() {
         </div>
     </div>
   );
+}
+
+// Added Loader2 to imports above
+import { Loader2 } from "lucide-react"; 
+
+function GoogleIcon() {
+    return (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+        </svg>
+    )
 }
