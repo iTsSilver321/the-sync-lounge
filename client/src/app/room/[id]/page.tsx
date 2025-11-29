@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation"; // Added useRouter
+import { useParams, useRouter } from "next/navigation"; 
 import SwipeGame from "@/components/SwipeGame";
 import MindMeld from "@/components/MindMeld";
 import SharedCanvas from "@/components/SharedCanvas";
@@ -10,6 +10,7 @@ import TruthDare from "@/components/TruthDare";
 import DailyPulse from "@/components/DailyPulse";
 import ProfileLab from "@/components/ProfileLab";
 import ProfileCard from "@/components/ProfileCard";
+import RelationshipCounter from "@/components/RelationshipCounter"; // <--- IMPORT
 import { supabase } from "@/lib/supabase";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
 import { Film, Brain, Palette, BookHeart, Zap, CalendarHeart, LogOut, Loader2, Heart, User, Settings } from "lucide-react";
@@ -28,38 +29,39 @@ const TABS = [
 export default function GameRoom() {
   const { playMatch } = useGameSounds(); 
   const params = useParams();
-  const router = useRouter(); // Initialize Router
+  const router = useRouter(); 
   const roomId = params.id as string;
   
-  // State
   const [activeTab, setActiveTab] = useState("movies");
   const [user, setUser] = useState<any>(null);
-  
-  // Profile State
   const [myProfile, setMyProfile] = useState<any>(null);
   const [partnerProfile, setPartnerProfile] = useState<any>(null);
   const [showProfileLab, setShowProfileLab] = useState(false);
   const [viewingProfile, setViewingProfile] = useState<any | null>(null);
   
-  // Animation Controls
+  // NEW STATE: Relationship Start Date
+  const [startDate, setStartDate] = useState<string | null>(null);
+
   const heartControls = useAnimation();
   const activeTabLabel = TABS.find(t => t.id === activeTab)?.label || "The Lounge";
 
-  // --- INITIALIZATION & SYNC ---
   useEffect(() => {
     const init = async () => {
         const { data: userData } = await supabase.auth.getUser();
         if(!userData.user) return;
         setUser(userData.user);
 
-        // 1. Fetch Initial Profiles
         fetchProfiles(userData.user.id);
+        fetchCoupleData(); // <--- Fetch Date
 
-        // 2. Realtime Profile Updates (Sync Aura/Avatar instantly)
+        // Listen for updates (e.g. if partner changes the date)
         const channel = supabase
             .channel('room-updates')
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `couple_id=eq.${roomId}` }, 
                 () => fetchProfiles(userData.user.id)
+            )
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'couples', filter: `id=eq.${roomId}` },
+                () => fetchCoupleData()
             )
             .subscribe();
 
@@ -67,13 +69,10 @@ export default function GameRoom() {
     };
     
     init();
-    
-    // 3. Secure Socket Connection
     connectSocket(); 
     
-    // 4. Heartbeat Listener
     const handleHeartbeat = async () => {
-        playMatch(); // Heartbeat sound
+        playMatch(); 
         if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate([50, 100, 50]);
         await heartControls.start({ scale: [1, 1.5, 1], color: ["#ffffff", "#ec4899", "#ffffff"], transition: { duration: 0.4 } });
     };
@@ -90,30 +89,29 @@ export default function GameRoom() {
       }
   };
 
+  // NEW: Fetch Couple Data
+  const fetchCoupleData = async () => {
+      const { data } = await supabase.from('couples').select('relationship_start').eq('id', roomId).single();
+      if (data) setStartDate(data.relationship_start);
+  };
+
   const sendHeartbeat = () => {
       socket.emit("heart:beat");
       heartControls.start({ scale: [1, 0.8, 1.2, 1], transition: { duration: 0.3 } });
   };
 
-  // --- NEW LOGOUT HANDLER ---
   const handleLogout = async () => {
-      // 1. Disconnect Socket
       if (socket.connected) socket.disconnect();
-      
-      // 2. Clear Session
       await supabase.auth.signOut();
-      
-      // 3. Go Home
       router.push("/");
   };
 
-  // Determine Theme Color based on My Aura (Default Purple)
   const themeColor = myProfile?.aura_color || "#A855F7";
 
   return (
     <main className="flex min-h-screen flex-col bg-zinc-950 text-white relative overflow-hidden">
       
-      {/* Dynamic Background Ambience (Uses Aura) */}
+      {/* Dynamic Background */}
       <div className="fixed inset-0 pointer-events-none transition-colors duration-1000">
           <div className="absolute top-[-10%] right-[-10%] w-[40vw] h-[40vw] rounded-full blur-[100px] opacity-20" style={{ backgroundColor: themeColor }} />
           <div className="absolute bottom-[-10%] left-[-10%] w-[40vw] h-[40vw] bg-pink-900/20 rounded-full blur-[100px]" />
@@ -121,17 +119,15 @@ export default function GameRoom() {
 
       {/* HEADER */}
       <header className="p-6 flex justify-between items-center z-20 relative">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
             
-            {/* DOUBLE BUBBLE AVATAR (Click to View Card) */}
+            {/* AVATARS */}
             <div className="relative w-12 h-10 cursor-pointer" onClick={() => setViewingProfile(partnerProfile || myProfile)}>
-                {/* Partner (Behind) */}
                 <div className="absolute right-0 top-0 w-8 h-8 rounded-full border-2 border-zinc-950 bg-zinc-800 overflow-hidden shadow-lg">
                     {partnerProfile?.avatar_url ? (
                         <img src={partnerProfile.avatar_url} className="w-full h-full object-cover" />
                     ) : <div className="w-full h-full bg-zinc-700" />}
                 </div>
-                {/* Me (Front) */}
                 <div className="absolute left-0 bottom-0 w-9 h-9 rounded-full border-2 border-zinc-950 bg-zinc-800 overflow-hidden shadow-xl z-10 transition-transform hover:scale-110">
                     {myProfile?.avatar_url ? (
                         <img src={myProfile.avatar_url} className="w-full h-full object-cover" />
@@ -139,22 +135,9 @@ export default function GameRoom() {
                 </div>
             </div>
 
-            <div>
-                {/* DYNAMIC TITLE */}
-                <motion.h1 
-                    key={activeTabLabel}
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="text-sm font-bold text-white leading-none uppercase tracking-wide"
-                >
-                    {activeTabLabel}
-                </motion.h1>
-                <div className="flex items-center gap-1 opacity-50 mt-1">
-                    <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: themeColor }} />
-                    <span className="text-[10px] font-mono uppercase tracking-widest">
-                        {myProfile?.display_name && partnerProfile?.display_name ? "Connected" : "Setup Required"}
-                    </span>
-                </div>
+            {/* RELATIONSHIP COUNTER (Replaces Title) */}
+            <div className="flex flex-col justify-center">
+                <RelationshipCounter coupleId={roomId} initialDate={startDate} />
             </div>
         </div>
         
@@ -162,7 +145,6 @@ export default function GameRoom() {
             <button onClick={() => setShowProfileLab(true)} className="w-10 h-10 glass-panel rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all">
                 <Settings size={16} />
             </button>
-            {/* CHANGED: Replaced Link with Button */}
             <button onClick={handleLogout} className="w-10 h-10 glass-panel rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-all">
                 <LogOut size={16} />
             </button>
@@ -200,7 +182,6 @@ export default function GameRoom() {
                 
                 {activeTab === "memories" && <Memories />}
                 
-                {/* Fallback Loading */}
                 {!user && activeTab !== "movies" && activeTab !== "canvas" && activeTab !== "memories" && (
                     <div className="text-zinc-500 flex gap-2 items-center"><Loader2 className="animate-spin" size={16}/> Syncing Profile...</div>
                 )}
@@ -208,7 +189,7 @@ export default function GameRoom() {
         </AnimatePresence>
       </div>
 
-      {/* HEARTBEAT (Using Gradient of Both Auras) */}
+      {/* HEARTBEAT */}
       <div className="fixed bottom-24 right-6 z-50">
           <motion.button
             animate={heartControls}
@@ -261,9 +242,7 @@ export default function GameRoom() {
         </div>
       </div>
 
-      {/* === MODALS === */}
-      
-      {/* 1. Profile Editor (Lab) */}
+      {/* MODALS */}
       <AnimatePresence>
         {showProfileLab && myProfile && (
             <ProfileLab 
@@ -274,7 +253,6 @@ export default function GameRoom() {
         )}
       </AnimatePresence>
 
-      {/* 2. Profile Card (Viewer) */}
       <AnimatePresence>
         {viewingProfile && (
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setViewingProfile(null)}>
@@ -283,8 +261,6 @@ export default function GameRoom() {
                         profile={viewingProfile} 
                         isOwnProfile={viewingProfile.id === user?.id} 
                     />
-                    
-                    {/* If it's my profile, show Edit button below card */}
                     {viewingProfile.id === user?.id && (
                         <motion.button
                             initial={{ opacity: 0, y: 10 }}
