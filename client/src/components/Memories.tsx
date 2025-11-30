@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { socket, connectSocket } from "@/lib/socket"; // <--- Added connectSocket import
+import { socket, connectSocket } from "@/lib/socket";
 import { motion, LayoutGroup } from "framer-motion";
-import { Loader2, CalendarHeart, BookHeart } from "lucide-react";
+import { Loader2, CalendarHeart, BookHeart, Sticker } from "lucide-react";
 import { useParams } from "next/navigation";
 
 const formatDate = (dateStr: string) => {
@@ -23,10 +23,7 @@ export default function Memories() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 1. Ensure Secure Connection (New Logic)
     connectSocket(); 
-
-    // 2. Fetch Initial Data
     fetchFullHistory();
 
     const handleRefresh = () => setTimeout(() => fetchFullHistory(), 1000);
@@ -34,18 +31,21 @@ export default function Memories() {
     socket.on("movie:match_found", handleRefresh);
     socket.on("mind:reveal", handleRefresh);
     socket.on("daily:partner_submitted", handleRefresh);
-    socket.on("truth:sync_challenge", handleRefresh);
+    socket.on("truth:new_challenge", handleRefresh); // Fixed event name
+    // Listen for new archived notes
+    socket.on("note:delete", handleRefresh); 
 
     return () => {
       socket.off("movie:match_found", handleRefresh);
       socket.off("mind:reveal", handleRefresh);
       socket.off("daily:partner_submitted", handleRefresh);
-      socket.off("truth:sync_challenge", handleRefresh);
+      socket.off("truth:new_challenge", handleRefresh);
+      socket.off("note:delete", handleRefresh);
     };
   }, []);
 
   const fetchFullHistory = async () => {
-    // Fetch History (Movies, Mind, Truth/Dare)
+    // Fetch History (Movies, Mind, Truth/Dare, Notes)
     const { data: historyData } = await supabase
       .from('history')
       .select('*')
@@ -126,6 +126,21 @@ export default function Memories() {
                             <div className="text-[10px] text-zinc-600 mb-3 uppercase tracking-wider font-bold">
                                 {formatDate(item.date)}
                             </div>
+
+                            {/* --- LOVE NOTE (NEW) --- */}
+                            {item.category === 'note' && (
+                                <div>
+                                    <div className="flex items-center gap-2 mb-2 text-zinc-500">
+                                        <Sticker size={14} />
+                                        <span className="text-[10px] font-bold uppercase tracking-widest">Fridge Note</span>
+                                    </div>
+                                    <div className={`p-4 rounded-xl shadow-sm rotate-1 ${item.content.style?.bg || "bg-yellow-200"}`}>
+                                        <p className={`font-medium text-lg leading-snug ${item.content.style?.text || "text-zinc-900"}`}>
+                                            "{item.content.text}"
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* MOVIE */}
                             {item.category === 'movie' && (

@@ -206,6 +206,33 @@ io.on('connection', (socket) => {
     }
   });
 
+  // --- MODULE G: LOVE NOTES (The Fridge) ---
+  
+  // 1. Real-time Dragging (Speed)
+  socket.on('note:move', (data) => {
+    // data = { id, x, y, rotation, userId }
+    const roomId = socket.data.roomId;
+    if (roomId) {
+      socket.broadcast.to(roomId).emit('note:moved', data);
+    }
+  });
+
+  // 2. Creation (Sync)
+  socket.on('note:create', (note) => {
+    const roomId = socket.data.roomId;
+    if (roomId) {
+      socket.broadcast.to(roomId).emit('note:created', note);
+    }
+  });
+
+  // 3. Deletion/Archiving
+  socket.on('note:delete', (noteId) => {
+    const roomId = socket.data.roomId;
+    if (roomId) {
+      socket.broadcast.to(roomId).emit('note:deleted', noteId);
+    }
+  });
+
   // --- CANVAS ---
   socket.on('canvas:draw', (data) => {
     const roomId = socket.data.roomId;

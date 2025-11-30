@@ -10,16 +10,18 @@ import TruthDare from "@/components/TruthDare";
 import DailyPulse from "@/components/DailyPulse";
 import ProfileLab from "@/components/ProfileLab";
 import ProfileCard from "@/components/ProfileCard";
-import RelationshipCounter from "@/components/RelationshipCounter"; // <--- IMPORT
+import LoveFridge from "@/components/LoveFridge"; // <--- RESTORED IMPORT
+import RelationshipCounter from "@/components/RelationshipCounter"; 
 import { supabase } from "@/lib/supabase";
 import { motion, AnimatePresence, useAnimation } from "framer-motion";
-import { Film, Brain, Palette, BookHeart, Zap, CalendarHeart, LogOut, Loader2, Heart, User, Settings } from "lucide-react";
+import { Film, Brain, Palette, BookHeart, Zap, CalendarHeart, LogOut, Loader2, Heart, User, Settings, StickyNote } from "lucide-react"; // <--- RESTORED StickyNote
 import { useGameSounds } from "@/hooks/useGameSounds";
 import { socket, connectSocket } from "@/lib/socket";
 
 const TABS = [
   { id: "movies", icon: Film, label: "Cinema" },
   { id: "daily", icon: CalendarHeart, label: "Daily" },
+  { id: "fridge", icon: StickyNote, label: "Notes" }, // <--- RESTORED TAB
   { id: "truth", icon: Zap, label: "Play" },
   { id: "canvas", icon: Palette, label: "Draw" },
   { id: "mind", icon: Brain, label: "Mind" },
@@ -38,8 +40,6 @@ export default function GameRoom() {
   const [partnerProfile, setPartnerProfile] = useState<any>(null);
   const [showProfileLab, setShowProfileLab] = useState(false);
   const [viewingProfile, setViewingProfile] = useState<any | null>(null);
-  
-  // NEW STATE: Relationship Start Date
   const [startDate, setStartDate] = useState<string | null>(null);
 
   const heartControls = useAnimation();
@@ -52,9 +52,8 @@ export default function GameRoom() {
         setUser(userData.user);
 
         fetchProfiles(userData.user.id);
-        fetchCoupleData(); // <--- Fetch Date
+        fetchCoupleData(); 
 
-        // Listen for updates (e.g. if partner changes the date)
         const channel = supabase
             .channel('room-updates')
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `couple_id=eq.${roomId}` }, 
@@ -89,7 +88,6 @@ export default function GameRoom() {
       }
   };
 
-  // NEW: Fetch Couple Data
   const fetchCoupleData = async () => {
       const { data } = await supabase.from('couples').select('relationship_start').eq('id', roomId).single();
       if (data) setStartDate(data.relationship_start);
@@ -135,7 +133,7 @@ export default function GameRoom() {
                 </div>
             </div>
 
-            {/* RELATIONSHIP COUNTER (Replaces Title) */}
+            {/* COUNTER */}
             <div className="flex flex-col justify-center">
                 <RelationshipCounter coupleId={roomId} initialDate={startDate} />
             </div>
@@ -163,6 +161,15 @@ export default function GameRoom() {
                 className="w-full h-full flex flex-col items-center justify-center"
             >
                 {activeTab === "movies" && <SwipeGame />}
+                
+                {/* --- RESTORED LOVE FRIDGE --- */}
+                {activeTab === "fridge" && user && (
+                    <LoveFridge 
+                        user={user} 
+                        coupleId={roomId} 
+                        partnerProfile={partnerProfile}
+                    />
+                )}
                 
                 {activeTab === "daily" && user && (
                     <DailyPulse user={user} partnerProfile={partnerProfile} /> 
